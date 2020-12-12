@@ -7,13 +7,12 @@ int main() {
   string line;
   int count = 0;
   while (getline(cin,line)) {
-    set<char> common_questions;
+    set<char> q_union;
     while (!line.empty()) {
-      for (char q : line)
-        common_questions.insert(q);
+      q_union.insert(line.begin(),line.end());
       getline(cin,line);
     }
-    count += common_questions.size();
+    count += q_union.size();
   }
   cout << count << endl;
 }
