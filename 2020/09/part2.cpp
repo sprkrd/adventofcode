@@ -13,9 +13,8 @@ int main(int argc, char* argv[]) {
   unsigned lo = 0, hi = 1;
   int64_t sum = numbers[lo] + numbers[hi];
   while (true) {
-    if (sum < k_target) {
+    if (sum < k_target)
       sum += numbers[++hi];
-    }
     else if (sum > k_target)
       sum -= numbers[lo++];
     else
