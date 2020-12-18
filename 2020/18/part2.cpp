@@ -1,73 +1,104 @@
+#include <cassert>
 #include <iostream>
+#include <stack>
 #include <string>
-#include <set>
-#include <tuple>
 #include <vector>
 using namespace std;
 
-typedef tuple<int,int,int,int> point_t;
-
-typedef set<point_t> point_cloud_t;
-
-vector<point_t> get_neighbors(const point_cloud_t& points, const point_t& point, bool active = true) {
-  auto[x0,y0,z0,w0] = point;
-  vector<point_t> neighbors;
-  neighbors.reserve(80);
-  for (int x = x0-1; x <= x0+1; ++x) {
-    for (int y = y0-1; y <= y0+1; ++y) {
-      for (int z = z0-1; z <= z0+1; ++z) {
-        for (int w = w0-1; w <= w0+1; ++w) {
-          bool include = ( (x!=x0) || (y!=y0) || (z!=z0) || (w!=w0) ) &&
-            ( active == (points.find({x,y,z,w}) != points.end()) );
-          if (include)
-            neighbors.emplace_back(x,y,z,w);
-        }
-      }
+vector<string> tokenize(const string& str) {
+  vector<string> tokens;
+  size_t pos = 0;
+  while (pos < str.length()) {
+    size_t pos_next = str.find_first_of("() \t\n", pos);
+    if (pos_next > pos)
+      tokens.push_back(str.substr(pos, pos_next-pos));
+    if (pos_next == string::npos)
+      pos = string::npos;
+    else {
+      if (!isspace(str[pos_next]))
+        tokens.emplace_back(1,str[pos_next]);
+      pos = pos_next + 1;
     }
   }
-  return neighbors;
+  return tokens;
 }
 
-point_cloud_t calculate_frontier(const point_cloud_t& points) {
-  point_cloud_t frontier;
-  for (const auto& point : points) {
-    auto inactive_neighbors = get_neighbors(points, point, false);
-    frontier.insert(inactive_neighbors.begin(), inactive_neighbors.end());
+ostream& operator<<(ostream& out, const vector<string>& tokens) {
+  for (unsigned i = 0; i < tokens.size(); ++i) {
+    if (i > 0) out << ' ';
+    out << tokens[i];
   }
-  return frontier;
+  return out;
 }
 
-void update(point_cloud_t& points) {
-  point_cloud_t updated;
-  point_cloud_t frontier = calculate_frontier(points);
-  for (const auto& point : points) {
-    int active_neighbor_count = get_neighbors(points, point).size();
-    if (active_neighbor_count == 2 || active_neighbor_count == 3)
-      updated.insert(point);
-  }
-  for (const auto& point : frontier) {
-    int active_neighbor_count = get_neighbors(points, point).size();
-    if (active_neighbor_count == 3)
-      updated.insert(point);
-  }
-  updated.swap(points);
+bool is_operator(const string& token) {
+  return token == "+" || token == "*";
 }
+
+int precedence(const string& token) {
+  return 2*(token=="+") + (token=="*");
+}
+
+// performs Dijkstra's shunting-yard algorithm to compute reverse
+// polish notation of an expression.
+vector<string> rpn(const string& expression) {
+  auto tokens = tokenize(expression);
+  vector<string> output;
+  stack<string> operator_stack;
+  for (unsigned i = 0; i < tokens.size(); ++i) {
+    if (is_operator(tokens[i])) {
+      while (!operator_stack.empty() &&
+             precedence(tokens[i]) <=
+             precedence(operator_stack.top())) {
+        output.push_back(operator_stack.top());
+        operator_stack.pop();
+      }
+      operator_stack.push(tokens[i]);
+    }
+    else if (tokens[i] == "(")
+      operator_stack.push(tokens[i]);
+    else if (tokens[i] == ")") {
+      while (operator_stack.top() != "(") {
+        output.push_back(operator_stack.top());
+        operator_stack.pop();
+      }
+      operator_stack.pop();
+    }
+    else
+      output.push_back(tokens[i]);
+  }
+  while (!operator_stack.empty()) {
+    output.push_back(operator_stack.top());
+    operator_stack.pop();
+  }
+  return output;
+}
+
+long long eval(const string& expression) {
+  auto rpnexp = rpn(expression);
+  stack<long long> s;
+  for (const auto& tok : rpnexp) {
+    if (is_operator(tok)) {
+      long long op2 = s.top(); s.pop();
+      long long op1 = s.top(); s.pop();
+      if (tok == "+")
+        s.push(op1+op2);
+      else
+        s.push(op1*op2);
+    }
+    else
+      s.push(stoll(tok));
+  }
+  assert(s.size() == 1);
+  return s.top();
+}
+
 
 int main() {
-  point_cloud_t points;
-  int row = 0;
+  long long sum = 0;
   string line;
-  while (getline(cin,line)) {
-    for (int col = 0; col < line.length(); ++col) {
-      if (line[col] == '#')
-        points.emplace(row,col,0,0);
-    }
-    ++row;
-  }
-  for (int i = 0; i < 6; ++i) {
-    cout << i << ' ' << points.size() << endl;
-    update(points);
-  }
-  cout << points.size() << endl;
+  while (getline(cin,line))
+    sum += eval(line);
+  cout << sum << endl;
 }
 
