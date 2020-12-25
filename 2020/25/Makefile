@@ -1,4 +1,4 @@
-PROGRAMS = part1 part2
+PROGRAMS = part1
 
 all: $(PROGRAMS)
 
