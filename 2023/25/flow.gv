@@ -1,0 +1,83 @@
+digraph G {
+jqt
+rhn
+xhk
+nvd
+rsh
+frs
+pzl
+lsr
+hfx
+cmg
+qnr
+lhk
+bvb
+ntq
+rzs
+lsr -> frs [label="0/1"]
+frs -> lsr [label="0/1"]
+qnr -> frs [label="0/1"]
+rsh -> rzs [label="-1/1"]
+hfx -> rhn [label="0/1"]
+qnr -> nvd [label="1/1"]
+rzs -> lsr [label="-1/1"]
+rhn -> xhk [label="-1/1"]
+jqt -> rhn [label="1/1"]
+pzl -> lsr [label="0/1"]
+bvb -> ntq [label="0/1"]
+nvd -> qnr [label="-1/1"]
+lsr -> rzs [label="1/1"]
+frs -> lhk [label="0/1"]
+bvb -> cmg [label="-1/1"]
+nvd -> jqt [label="1/1"]
+lsr -> rsh [label="-1/1"]
+pzl -> nvd [label="-1/1"]
+cmg -> bvb [label="1/1"]
+lhk -> frs [label="0/1"]
+rsh -> lsr [label="1/1"]
+jqt -> nvd [label="-1/1"]
+nvd -> pzl [label="1/1"]
+lhk -> cmg [label="-1/1"]
+xhk -> jqt [label="0/1"]
+rhn -> hfx [label="0/1"]
+hfx -> pzl [label="-1/1"]
+jqt -> xhk [label="0/1"]
+rsh -> pzl [label="0/1"]
+pzl -> hfx [label="1/1"]
+cmg -> nvd [label="0/1"]
+hfx -> xhk [label="0/1"]
+rhn -> jqt [label="-1/1"]
+xhk -> rhn [label="1/1"]
+ntq -> bvb [label="0/1"]
+bvb -> rhn [label="1/1"]
+pzl -> rsh [label="0/1"]
+ntq -> xhk [label="1/1"]
+xhk -> hfx [label="0/1"]
+nvd -> cmg [label="0/1"]
+frs -> rsh [label="0/1"]
+bvb -> xhk [label="0/1"]
+lsr -> pzl [label="0/1"]
+rzs -> rsh [label="1/1"]
+rhn -> bvb [label="-1/1"]
+cmg -> lhk [label="1/1"]
+xhk -> ntq [label="-1/1"]
+cmg -> qnr [label="0/1"]
+xhk -> bvb [label="0/1"]
+frs -> qnr [label="0/1"]
+bvb -> hfx [label="0/1"]
+lhk -> lsr [label="0/1"]
+rzs -> qnr [label="1/1"]
+hfx -> bvb [label="0/1"]
+qnr -> rzs [label="-1/1"]
+ntq -> jqt [label="0/1"]
+ntq -> hfx [label="-1/1"]
+lsr -> lhk [label="0/1"]
+jqt -> ntq [label="0/1"]
+rzs -> cmg [label="-1/1"]
+hfx -> ntq [label="1/1"]
+cmg -> rzs [label="1/1"]
+qnr -> cmg [label="0/1"]
+nvd -> lhk [label="-1/1"]
+rsh -> frs [label="0/1"]
+lhk -> nvd [label="1/1"]
+}
