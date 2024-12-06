@@ -1,38 +1,62 @@
+#include <array>
 #include <iostream>
-#include <sstream>
+#include <string>
 #include <vector>
-#include <regex>
 using namespace std;
 
-regex pattern("mul\\((\\d{1,3}),(\\d{1,3})\\)|do\\(\\)|don't\\(\\)");
+typedef pair<int,int> Vec2i;
+
+bool matches(const vector<string>& matrix, const Vec2i& loc)
+{
+    auto[x,y] = loc;
+    if (matrix[y][x] != 'A')
+    {
+        return false;
+    }
+    if (matrix[y-1][x-1] == 'M' && matrix[y-1][x+1] == 'M' &&
+        matrix[y+1][x-1] == 'S' && matrix[y+1][x+1] == 'S')
+    {
+        return true;
+    }
+    if (matrix[y-1][x-1] == 'M' && matrix[y-1][x+1] == 'S' &&
+        matrix[y+1][x-1] == 'M' && matrix[y+1][x+1] == 'S')
+    {
+        return true;
+    }
+    if (matrix[y-1][x-1] == 'S' && matrix[y-1][x+1] == 'S' &&
+        matrix[y+1][x-1] == 'M' && matrix[y+1][x+1] == 'M')
+    {
+        return true;
+    }
+    if (matrix[y-1][x-1] == 'S' && matrix[y-1][x+1] == 'M' &&
+        matrix[y+1][x-1] == 'S' && matrix[y+1][x+1] == 'M')
+    {
+        return true;
+    }
+    return false;
+}
+
+int count(const vector<string>& matrix)
+{
+    int width = matrix[0].length();
+    int height = matrix.size();
+    int ans = 0;
+    for (int y = 1; y < height-1; ++y)
+    {
+        for (int x = 1; x < width-1; ++x)
+        {
+            ans += matches(matrix, Vec2i(x, y));
+        }
+    }
+    return ans;
+}
 
 int main() {
-    bool enabled = true;
-    int ans = 0;
+    vector<string> matrix;
     string line;
     while (getline(cin, line))
     {
-        auto begin = sregex_iterator(line.begin(), line.end(), pattern);
-        auto end = sregex_iterator();
-        
-        for (auto i = begin; i != end; ++i)
-        {
-            auto match = *i;
-            if (match.str() == "do()")
-            {
-                enabled = true;
-            }
-            else if (match.str() == "don't()")
-            {
-                enabled = false;
-            }
-            else if (enabled)
-            {
-                int a = stoi(match[1]);
-                int b = stoi(match[2]);
-                ans += a*b;
-            }
-        }
+        matrix.push_back(move(line));
     }
-    cout << ans << endl;
+    cout << count(matrix) << endl;
 }
