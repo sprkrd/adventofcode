@@ -1,156 +1,163 @@
 #include <algorithm>
-#include <limits>
+#include <array>
 #include <iostream>
+#include <optional>
 #include <vector>
+#include <set>
 #include <string>
 using namespace std;
 
-constexpr size_t kMaxSize = numeric_limits<size_t>::max();
-constexpr size_t kEmptySpace = kMaxSize;
+typedef pair<int, int> Vec2i;
 
-struct Block
-{
-    size_t fileId;
-    size_t address;
-    size_t size;
+constexpr array<Vec2i, 4> kDirections{
+    Vec2i(0, -1),
+    Vec2i(1, 0),
+    Vec2i(0, 1),
+    Vec2i(-1, 0)
 };
 
-size_t sumNToM(size_t n, size_t m)
+Vec2i operator+(const Vec2i& lhs, const Vec2i& rhs)
 {
-    return (m*(m+1) - n*(n-1))/2;
+    return Vec2i(lhs.first + rhs.first, lhs.second + rhs.second);
 }
 
-void tidyBlocks(vector<Block>& blocks, size_t memorySize = kMaxSize)
+struct Matrix
 {
-    vector<Block> tidyBlocks;
-    tidyBlocks.reserve(blocks.size());
-    for (const auto& block : blocks)
-    {
-        if (block.size && block.address < memorySize)
-        {
-            tidyBlocks.push_back(block);
-        }
-    }
-    sort(tidyBlocks.begin(), tidyBlocks.end(), [](const Block& b1, const Block& b2)
-    {
-        return b1.address < b2.address;
-    });
-    blocks = move(tidyBlocks);
-}
+    string data;
+    int height;
+    int width;
 
-struct Memory
-{
-    vector<Block> memoryMap;
-    vector<Block> freeBlocks;
-    size_t heapPointer;
-    
-    Memory() : heapPointer(0)
+    char& at(int x, int y)
     {
+        return data[y*width + x];
     }
-    
-    void alloc(size_t fileId, size_t fileSize)
+
+    char at(int x, int y) const
     {
-        Block block = {fileId, heapPointer, fileSize};
-        if (fileId == kEmptySpace)
-        {
-            freeBlocks.push_back(block);
-        }
-        else
-        {
-            memoryMap.push_back(block);
-        }
-        heapPointer += fileSize;
+        return data[y*width + x];
     }
-    
-    void compress()
+
+    char& at(const Vec2i& position)
     {
-        size_t freeBlockIndex = 0;
-        size_t fileBlockIndex = memoryMap.size() - 1;
-        
-        while (fileBlockIndex < kMaxSize && freeBlockIndex < freeBlocks.size() &&
-               freeBlocks[freeBlockIndex].address < memoryMap[fileBlockIndex].address)
-        {
-            auto& fileBlock = memoryMap[fileBlockIndex];
-            auto& freeBlock = freeBlocks[freeBlockIndex];
-            size_t allocatableSize = min(fileBlock.size, freeBlock.size);
-            
-            fileBlock.size -= allocatableSize;
-            
-            Block newBlock = {fileBlock.fileId, freeBlock.address, allocatableSize};
-            
-            freeBlock.size -= allocatableSize;
-            freeBlock.address += allocatableSize;
-            
-            if (freeBlock.size == 0)
-            {
-                ++freeBlockIndex;
-            }
-            if (fileBlock.size == 0)
-            {
-                --fileBlockIndex;
-            }
-            memoryMap.push_back(newBlock);
-        }
-        
-        tidyBlocks(memoryMap);
-        heapPointer = memoryMap.back().address + memoryMap.back().size;
-        tidyBlocks(freeBlocks, heapPointer);
-        
+        return at(position.first, position.second);
     }
-    
-    size_t calculateChecksum() const
+
+    char at(const Vec2i& position) const
     {
-        size_t checksum = 0;
-        for (const auto& block : memoryMap)
-        {
-            checksum += block.fileId*sumNToM(block.address, block.address+block.size-1);
-        }
-        return checksum;
+        return at(position.first, position.second);
     }
-    
-    void display(ostream& out) const
+
+    bool validPosition(const Vec2i& position) const
     {
-        size_t previousAddress = 0;
-        for (const auto& block : memoryMap)
+        return position.first >= 0 && position.first < width &&
+               position.second >= 0 && position.second < height;
+    }
+
+    optional<Vec2i> find(const string& chars, const Vec2i& offset = Vec2i(-1, 0)) const
+    {
+        size_t pos = data.find_first_of(chars, offset.second*width+offset.first+1);
+        if (pos != string::npos)
         {
-            for (size_t i = previousAddress; i < block.address; ++i)
-            {
-                out << '.';
-            }
-            for (size_t i = 0; i < block.size; ++i)
-            {
-                out << block.fileId;
-            }
-            previousAddress = block.address+block.size;
+            return Vec2i(pos%width, pos/width);
         }
-        out << '\n';
+        return {};
+    }
+
+    int count(char c) const
+    {
+        return std::count(data.begin(), data.end(), c);
+    }
+
+    void read(istream& in)
+    {
+        data.clear();
+        string line;
+        height = 0;
+        while (getline(in, line))
+        {
+            if (data.empty())
+            {
+                width = line.length();
+            }
+            data += line;
+            ++height;
+        }
+    }
+
+    void print(ostream& out) const
+    {
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                out << at(x, y);
+            }
+            out << '\n';
+        }
     }
 };
+
+istream& operator>>(istream& in, Matrix& matrix)
+{
+    matrix.read(in);
+    return in;
+}
+
+ostream& operator<<(ostream& out, const Matrix& matrix)
+{
+    matrix.print(out);
+    return out;
+}
+
+int trailheadScore(const Matrix& matrix, const Vec2i& startPosition)
+{
+    set<Vec2i> visited;
+    vector<Vec2i> stack{startPosition};
+    int score = 0;
+    while (!stack.empty())
+    {
+        auto position = stack.back();
+        stack.pop_back();
+        if (visited.count(position))
+        {
+            continue;
+        }
+        visited.insert(position);
+        char value = matrix.at(position);
+        if (value == '9')
+        {
+            ++score;
+            continue;
+        }
+        for (const auto& dir : kDirections)
+        {
+            auto neighbor = position + dir;
+            if (matrix.validPosition(neighbor) && matrix.at(neighbor) == value+1)
+            {
+                stack.push_back(neighbor);
+            }
+        }
+    }
+    return score;
+}
+
+int computeTrailheadScore(const Matrix& matrix)
+{
+    int score = 0;
+    auto trailheadCandidate = matrix.find("0");
+    while (trailheadCandidate)
+    {
+        score += trailheadScore(matrix, *trailheadCandidate);
+        trailheadCandidate = matrix.find("0", *trailheadCandidate);
+
+    }
+    return score;
+}
 
 int main()
 {
-    Memory memory;
-    
-    string memoryDump;
-    cin >> memoryDump;
-    
-    size_t fileId = 0;
-    bool empty = false;
-    for (char c : memoryDump)
-    {
-        if (empty)
-        {
-            memory.alloc(kEmptySpace, c-'0');
-        }
-        else
-        {
-            memory.alloc(fileId++, c-'0');
-        }
-        empty = !empty;
-    }
-    
-    memory.compress();
-    cout << memory.calculateChecksum() << endl;
-    
-    memory.display(cout);
+    Matrix matrix;
+    cin >> matrix;
+    cout << computeTrailheadScore(matrix) << endl;
 }
+

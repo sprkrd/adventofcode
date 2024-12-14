@@ -1,172 +1,173 @@
 #include <algorithm>
-#include <limits>
+#include <array>
 #include <iostream>
-#include <vector>
+#include <map>
+#include <optional>
 #include <queue>
+#include <set>
+#include <vector>
 #include <string>
 using namespace std;
 
-constexpr size_t kMaxSize = numeric_limits<size_t>::max();
-constexpr size_t kEmptySpace = kMaxSize;
+typedef pair<int, int> Vec2i;
 
-struct Block
+constexpr array<Vec2i, 4> kDirections{
+    Vec2i(0, -1),
+    Vec2i(1, 0),
+    Vec2i(0, 1),
+    Vec2i(-1, 0)
+};
+
+Vec2i operator+(const Vec2i& lhs, const Vec2i& rhs)
 {
-    size_t fileId;
-    size_t address;
-    size_t size;
-    
-    bool operator>(const Block& other) const
+    return Vec2i(lhs.first + rhs.first, lhs.second + rhs.second);
+}
+
+struct Matrix
+{
+    string data;
+    int height;
+    int width;
+
+    char& at(int x, int y)
     {
-        return address > other.address;
+        return data[y*width + x];
+    }
+
+    char at(int x, int y) const
+    {
+        return data[y*width + x];
+    }
+
+    char& at(const Vec2i& position)
+    {
+        return at(position.first, position.second);
+    }
+
+    char at(const Vec2i& position) const
+    {
+        return at(position.first, position.second);
+    }
+
+    bool validPosition(const Vec2i& position) const
+    {
+        return position.first >= 0 && position.first < width &&
+               position.second >= 0 && position.second < height;
+    }
+
+    optional<Vec2i> find(const string& chars, const Vec2i& offset = Vec2i(-1, 0)) const
+    {
+        size_t pos = data.find_first_of(chars, offset.second*width+offset.first+1);
+        if (pos != string::npos)
+        {
+            return Vec2i(pos%width, pos/width);
+        }
+        return {};
+    }
+
+    int count(char c) const
+    {
+        return std::count(data.begin(), data.end(), c);
+    }
+
+    void read(istream& in)
+    {
+        data.clear();
+        string line;
+        height = 0;
+        while (getline(in, line))
+        {
+            if (data.empty())
+            {
+                width = line.length();
+            }
+            data += line;
+            ++height;
+        }
+    }
+
+    void print(ostream& out) const
+    {
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                out << at(x, y);
+            }
+            out << '\n';
+        }
     }
 };
 
-size_t sumNToM(size_t n, size_t m)
+istream& operator>>(istream& in, Matrix& matrix)
 {
-    return (m*(m+1) - n*(n-1))/2;
+    matrix.read(in);
+    return in;
 }
 
-void tidyBlocks(vector<Block>& blocks, size_t memorySize = kMaxSize)
+ostream& operator<<(ostream& out, const Matrix& matrix)
 {
-    vector<Block> tidyBlocks;
-    tidyBlocks.reserve(blocks.size());
-    for (const auto& block : blocks)
-    {
-        if (block.size && block.address < memorySize)
-        {
-            tidyBlocks.push_back(block);
-        }
-    }
-    sort(tidyBlocks.begin(), tidyBlocks.end(), [](const Block& b1, const Block& b2)
-    {
-        return b1.address < b2.address;
-    });
-    blocks = move(tidyBlocks);
+    matrix.print(out);
+    return out;
 }
 
-struct Memory
+int trailheadScore(const Matrix& matrix, const Vec2i& startPosition)
 {
-    typedef priority_queue<Block,vector<Block>,greater<Block>> BlockQueue;
-    
-    vector<Block> memoryMap;
-    vector<BlockQueue> freeBlocks;
-    size_t heapPointer;
-    
-    Memory() : freeBlocks(10), heapPointer(0)
+    int score = 0;
+
+    map<Vec2i, int> cache{{startPosition, 1}};
+    set<Vec2i> closed;
+
+    queue<Vec2i> open;
+    open.push(startPosition);
+
+    while (!open.empty())
     {
-    }
-    
-    void alloc(size_t fileId, size_t fileSize)
-    {
-        Block block = {fileId, heapPointer, fileSize};
-        if (fileId == kEmptySpace)
+        auto position = open.front();
+        open.pop();
+        if (closed.count(position))
         {
-            freeBlocks[block.size].push(block);
+            continue;
         }
-        else
+        closed.insert(position);
+        char value = matrix.at(position);
+        int numberOfWays = cache[position];
+        if (value == '9')
         {
-            memoryMap.push_back(block);
+            score += numberOfWays;
+            continue;
         }
-        heapPointer += fileSize;
-    }
-    
-    Block popLeftmostFreeBlock(size_t minimumSize, size_t leftOf)
-    {
-        Block ans{kEmptySpace, kMaxSize, 0};
-        for (size_t size = minimumSize; size <= 9; ++size)
+        for (const auto& dir : kDirections)
         {
-            if (!freeBlocks[size].empty() && freeBlocks[size].top().address < min(leftOf, ans.address))
+            auto neighbor = position + dir;
+            if (matrix.validPosition(neighbor) && matrix.at(neighbor) == value+1)
             {
-                ans = freeBlocks[size].top();
+                cache[neighbor] += numberOfWays;
+                open.push(neighbor);
             }
         }
-        if (ans.address != kMaxSize)
-        {
-            if (ans.size > minimumSize)
-            {
-                Block newFreeBlock = {kEmptySpace, ans.address+minimumSize, ans.size - minimumSize};
-                freeBlocks[newFreeBlock.size].push(newFreeBlock);
-            }
-            freeBlocks[ans.size].pop();
-        }
-        return ans;
     }
-    
-    void compress()
+
+    return score;
+}
+
+int computeTrailheadScore(const Matrix& matrix)
+{
+    int score = 0;
+    auto trailheadCandidate = matrix.find("0");
+    while (trailheadCandidate)
     {
-        size_t fileBlockIndex = memoryMap.size()-1;
-        
-        while (fileBlockIndex < kMaxSize)
-        {
-            auto& fileBlock = memoryMap[fileBlockIndex];
-            
-            Block freeBlock = popLeftmostFreeBlock(fileBlock.size, fileBlock.address);
-            
-            if (freeBlock.address != kMaxSize)
-            {
-                fileBlock.address = freeBlock.address;
-            }
-            
-            --fileBlockIndex;
-        }
-        
-        tidyBlocks(memoryMap);
-        heapPointer = memoryMap.back().address + memoryMap.back().size;
+        score += trailheadScore(matrix, *trailheadCandidate);
+        trailheadCandidate = matrix.find("0", *trailheadCandidate);
+
     }
-    
-    size_t calculateChecksum() const
-    {
-        size_t checksum = 0;
-        for (const auto& block : memoryMap)
-        {
-            checksum += block.fileId*sumNToM(block.address, block.address+block.size-1);
-        }
-        return checksum;
-    }
-    
-    void display(ostream& out) const
-    {
-        size_t previousAddress = 0;
-        for (const auto& block : memoryMap)
-        {
-            for (size_t i = previousAddress; i < block.address; ++i)
-            {
-                out << '.';
-            }
-            for (size_t i = 0; i < block.size; ++i)
-            {
-                out << block.fileId;
-            }
-            previousAddress = block.address+block.size;
-        }
-        out << '\n';
-    }
-};
+    return score;
+}
 
 int main()
 {
-    Memory memory;
-    
-    string memoryDump;
-    cin >> memoryDump;
-    
-    size_t fileId = 0;
-    bool empty = false;
-    for (char c : memoryDump)
-    {
-        if (empty)
-        {
-            memory.alloc(kEmptySpace, c-'0');
-        }
-        else
-        {
-            memory.alloc(fileId++, c-'0');
-        }
-        empty = !empty;
-    }
-    
-    memory.compress();
-    cout << memory.calculateChecksum() << endl;
-    
-    memory.display(cout);
+    Matrix matrix;
+    cin >> matrix;
+    cout << computeTrailheadScore(matrix) << endl;
 }
+
