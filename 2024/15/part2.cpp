@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <map>
+#include <queue>
 #include <string>
 #include <vector>
 #include <optional>
@@ -31,6 +33,13 @@ struct Map
     std::string data;
     int height;
     int width;
+    
+    Map(int width = 0, int height = 0, char defaultChar=' ') :
+        data(width*height, defaultChar),
+        height(height),
+        width(width)
+    {
+    }
 
     char& at(int x, int y)
     {
@@ -114,7 +123,40 @@ std::ostream& operator<<(std::ostream& out, const Map& map)
     return out;
 }
 
-void stepX(Map& map, Vec2i& robotPosition, char instruction)
+Map expand(const Map& map)
+{
+    Map expanded(map.width*2, map.height);
+    for (int y = 0; y < map.height; ++y)
+    {
+        for (int x = 0; x < map.width; ++x)
+        {
+            Vec2i position(x,y);
+            Vec2i positionNew1(2*x,y);
+            Vec2i positionNew2(2*x+1,y);
+            if (map.at(position) == '#')
+            {
+                expanded.at(positionNew1) = expanded.at(positionNew2) = '#';
+            }
+            else if (map.at(position) == '.')
+            {
+                expanded.at(positionNew1) = expanded.at(positionNew2) = '.';
+            }
+            else if (map.at(position) == 'O')
+            {
+                expanded.at(positionNew1) = '[';
+                expanded.at(positionNew2) = ']';
+            }
+            else
+            {
+                expanded.at(positionNew1) = '@';
+                expanded.at(positionNew2) = '.';
+            }
+        }
+    }
+    return expanded;
+}
+
+bool stepX(Map& map, Vec2i& robotPosition, char instruction)
 {
     Vec2i direction = instruction=='>'? Vec2i(1,0) : Vec2i(-1,0);
     Vec2i targetPosition = robotPosition + direction;
@@ -123,7 +165,9 @@ void stepX(Map& map, Vec2i& robotPosition, char instruction)
         targetPosition = targetPosition + direction;
     }
     
-    if (map.at(targetPosition) == '.')
+    bool canMove = map.at(targetPosition) == '.';
+    
+    if (canMove)
     {
         while (targetPosition != robotPosition)
         {
@@ -134,16 +178,71 @@ void stepX(Map& map, Vec2i& robotPosition, char instruction)
         map.at(robotPosition) = '.';
         robotPosition = robotPosition + direction;
     }
-}
-
-void stepY(Map& map, Vec2i& robotPosition, char instruction)
-{
-    Vec2i direction = instruction=='>'? Vec2i(1,0) : Vec2i(-1,0);
-    Vec2i targetPosition = robotPosition + direction;
     
+    return canMove;
 }
 
-void step(Map& map, Vec2i& robotPosition, char instruction)
+bool stepY(Map& map, Vec2i& robotPosition, char instruction)
+{
+    Vec2i direction = instruction=='v'? Vec2i(0,1) : Vec2i(0,-1);
+    
+    std::map<Vec2i,char> stagedChanges{{robotPosition,'.'}};
+    std::queue<std::pair<Vec2i,char>> queue;
+    queue.emplace(robotPosition+direction, '@');
+    
+    while (!queue.empty())
+    {
+        auto[position,newValue] = queue.front();
+        queue.pop();
+        
+        if (stagedChanges.count(position))
+        {
+            continue;
+        }
+        
+        char oldValue = map.at(position);
+        
+        stagedChanges.emplace(position, newValue);
+        
+        if (oldValue == '.')
+        {
+            continue;
+        }
+        
+        if (oldValue == '#')
+        {
+            return false;
+        }
+        
+        Vec2i adjacentPosition;
+        char adjacentValue;
+        if (oldValue == '[')
+        {
+            adjacentPosition = position + Vec2i(1,0);
+            adjacentValue = ']';
+        }
+        else
+        {
+            adjacentPosition = position + Vec2i(-1,0);
+            adjacentValue = '[';
+        }
+        
+        queue.emplace(adjacentPosition, '.');
+        queue.emplace(position+direction, oldValue);
+        queue.emplace(adjacentPosition+direction, adjacentValue);
+    }
+    
+    robotPosition = robotPosition + direction;
+    
+    for (const auto&[position,newValue] : stagedChanges)
+    {
+        map.at(position) = newValue;
+    }
+    
+    return true;
+}
+
+bool step(Map& map, Vec2i& robotPosition, char instruction)
 {
     if (robotPosition.first == -1)
     {
@@ -151,11 +250,11 @@ void step(Map& map, Vec2i& robotPosition, char instruction)
     }
     if (instruction == '<' || instruction == '>')
     {
-        stepX(map, robotPosition, instruction);
+        return stepX(map, robotPosition, instruction);
     }
     else
     {
-        stepY(map, robotPosition, instruction);
+        return stepY(map, robotPosition, instruction);
     }
 }
 
@@ -171,6 +270,8 @@ int main()
         instructions += line;
     }
     
+    map = expand(map);
+    
     // std::cout << map << std::endl;
     Vec2i robotPosition(-1,-1);
     for (char instruction : instructions)
@@ -180,11 +281,11 @@ int main()
     }
     
     int ans = 0;
-    auto box = map.find("O");
+    auto box = map.find("[");
     while (box)
     {
         ans += box->second*100 + box->first;
-        box = map.find("O", *box);
+        box = map.find("[", *box);
     }
     std::cout << ans << std::endl;
 }
