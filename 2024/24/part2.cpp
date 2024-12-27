@@ -118,6 +118,8 @@ struct LogicCircuit
     {
         out << "digraph G {\n";
         
+        out << "rank=TD\n";
+        
         std::vector<std::string> inputsX;
         std::vector<std::string> inputsY;
         std::vector<std::string> outputs;
@@ -145,55 +147,55 @@ struct LogicCircuit
         std::sort(inputsY.begin(), inputsY.end());
         std::sort(outputs.begin(), outputs.end());
         
-        out << "subgraph cluster_InputsX {\n";
+        // out << "subgraph cluster_InputsX {\n";
         
-        out << "edge[style=invis]\n";
+        // out << "edge[style=invis]\n";
         
-        for (size_t i = 0; i < inputsX.size()-1; ++i)
+        // for (size_t i = 0; i < inputsX.size()-1; ++i)
+        // {
+            // out << inputsX[i] << " -> " << inputsX[i+1] << '\n';
+        // }
+        
+        // out << "label=\"X inputs\"\n";
+        
+        // out << "}\n";
+        
+        // out << "subgraph cluster_InputsY {\n";
+        
+        // out << "edge[style=invis]\n";
+        
+        // for (size_t i = 0; i < inputsY.size()-1; ++i)
+        // {
+            // out << inputsY[i] << " -> " << inputsY[i+1] << '\n';
+        // }
+        
+        // out << "label=\"Y inputs\"\n";
+        
+        // out << "}\n";
+        
+        // out << "subgraph cluster_Outputs {\n";
+        
+        for (const auto& gateName : outputs)
         {
-            out << inputsX[i] << " -> " << inputsX[i+1] << '\n';
+            const auto& gate = gates.find(gateName)->second;
+            out << gateName << "[label = < " << gateName << "<br/><b>" << gate.type << "</b> >,shape=box,style=filled,color=lightgrey]\n";
         }
         
-        out << "label=\"X inputs\"\n";
+        // out << "edge[style=invis]\n";
         
-        out << "}\n";
+        // for (size_t i = 0; i < outputs.size()-1; ++i)
+        // {
+            // out << outputs[i] << " -> " << outputs[i+1] << '\n';
+        // }
         
-        out << "subgraph cluster_InputsY {\n";
+        // out << "label=\"Outputs\"\n";
         
-        out << "edge[style=invis]\n";
-        
-        for (size_t i = 0; i < inputsY.size()-1; ++i)
-        {
-            out << inputsY[i] << " -> " << inputsY[i+1] << '\n';
-        }
-        
-        out << "label=\"Y inputs\"\n";
-        
-        out << "}\n";
-        
-        out << "subgraph cluster_Outputs {\n";
+        // out << "}\n";
         
         for (const auto& gateName : intermediateNodes)
         {
             const auto& gate = gates.find(gateName)->second;
-            out << gateName << "[label=\"<" << gateName << "<br><b>" << gate.type << "</b>>\",shape=box,style=filled,color=lightgrey]\n";
-        }
-        
-        out << "edge[style=invis]\n";
-        
-        for (size_t i = 0; i < outputs.size()-1; ++i)
-        {
-            out << outputs[i] << " -> " << outputs[i+1] << '\n';
-        }
-        
-        out << "label=\"Outputs\"\n";
-        
-        out << "}\n";
-        
-        for (const auto& gateName : intermediateNodes)
-        {
-            const auto& gate = gates.find(gateName)->second;
-            out << gateName << "[label=\"<" << gateName << "<br><b>" << gate.type << "</b>>\",shape=box,style=filled,color=lightgrey]\n";
+            out << gateName << "[label = < " << gateName << "<br/><b>" << gate.type << "</b> >,shape=box]\n";
         }
         
         for (const auto& gateName : intermediateNodes)
@@ -216,16 +218,31 @@ struct LogicCircuit
 
 int main()
 {
-    LogicCircuit logicCircuit;
-    std::string line;
-    while (std::getline(std::cin, line) && !line.empty()) 
-    {
-        logicCircuit.addInput(line);
-    }
-    while (std::getline(std::cin, line)) 
-    {
-        logicCircuit.addGate(line);
-    }
+    // LogicCircuit logicCircuit;
+    // std::string line;
+    // while (std::getline(std::cin, line) && !line.empty()) 
+    // {
+        // logicCircuit.addInput(line);
+    // }
+    // while (std::getline(std::cin, line)) 
+    // {
+        // logicCircuit.addGate(line);
+    // }
+    
+    // // swaps found by visual inspection
+    // std::swap(logicCircuit.gates["z09"], logicCircuit.gates["gwh"]);
+    // std::swap(logicCircuit.gates["z21"], logicCircuit.gates["rcb"]);
+    // std::swap(logicCircuit.gates["z39"], logicCircuit.gates["jct"]);
+    // std::swap(logicCircuit.gates["wbw"], logicCircuit.gates["wgb"]);
 
-    logicCircuit.dot(std::cout);
+    // logicCircuit.dot(std::cout);
+    
+    std::vector<std::string> ans{"z09","gwh","z21","rcb","z39","jct","wbw","wgb"};
+    std::sort(ans.begin(), ans.end());
+    std::cout << ans[0];
+    for (size_t i = 1; i < ans.size(); ++i)
+    {
+        std::cout << ',' << ans[i];
+    }
+    std::cout << std::endl;
 }
