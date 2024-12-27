@@ -1,258 +1,119 @@
 #include <algorithm>
+#include <cassert>
 #include <iostream>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-class Graph
+enum class GateType { Input, Or, And, Xor };
+
+struct Gate
 {
-    public:
-
-        void addEdge(const std::string& uLabel, const std::string& vLabel)
-        {
-            int u = getOrCreateNode(uLabel);
-            int v = getOrCreateNode(vLabel);
-            nodes[u].connectedTo.push_back(v);
-            nodes[v].connectedTo.push_back(u);
-        }
-
-        int getOrCreateNode(const std::string& label)
-        {
-            auto[it,inserted] = labelToId.emplace(label, nodes.size());
-            if (inserted)
-            {
-                nodes.push_back({label});
-            }
-            return it->second;
-        }
-
-        void dot(std::ostream& out)
-        {
-            out << "graph G {\n";
-            for (const auto& node : nodes)
-            {
-                for (int vId : node.connectedTo)
-                {
-                    if (node.label < nodes[vId].label)
-                    {
-                        out << node.label << " -- " << nodes[vId].label << '\n';
-                    }
-                }
-            }
-            out << '}';
-        }
-
-        bool hasNode(const std::string& label) const
-        {
-            return labelToId.find(label) != labelToId.end();
-        }
-
-        bool hasEdge(int u, int v) const
-        {
-            return std::find(
-                    nodes[u].connectedTo.begin(),
-                    nodes[u].connectedTo.end(),
-                    v) != nodes[u].connectedTo.end();
-        }
-
-        int getNumberOfNodes() const
-        {
-            return nodes.size();
-        }
-
-        const std::string& getNodeLabel(int i) const
-        {
-            return nodes[i].label;
-        }
-
-        const std::vector<int> connectedNodes(int i) const
-        {
-            return nodes[i].connectedTo;
-        }
-
-        int getNodeDegree(int i) const
-        {
-            return nodes[i].connectedTo.size();
-        }
-
-    private:
-
-        struct NodeInfo
-        {
-            std::string label;
-            std::vector<int> connectedTo;
-        };
-
-        std::vector<NodeInfo> nodes;
-        std::unordered_map<std::string,int> labelToId;
+    std::string input1;
+    std::string input2;
+    GateType type;
+    bool valueKnown;
+    bool value;
 };
 
-bool nextCombination(std::vector<bool>& combination)
-{
-    size_t i = 0;
-
-    bool wrapAround;
-
-    while (i < combination.size())
+std::vector<std::string> split(const std::string& str, const std::string& delim=" \n\t") {
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    while (pos < str.length())
     {
-        if (combination[i] && !combination[i+1])
+        size_t pos_next = str.find_first_of(delim, pos);
+        if (pos_next > pos)
         {
-            combination[i+1] = true;
-            combination[i] = false;
-            break;
+            parts.push_back(str.substr(pos, pos_next-pos));
         }
-        ++i;
+        pos = pos_next == std::string::npos? std::string::npos : pos_next + 1;
+    }
+    return parts;
+}
+
+struct LogicCircuit
+{
+    std::unordered_map<std::string, Gate> gates;
+
+    bool eval(const std::string& gateName)
+    {
+        auto& gate = gates.find(gateName)->second;
+        if (!gate.valueKnown)
+        {
+            bool eInput1 = eval(gate.input1);
+            bool eInput2 = eval(gate.input2);
+            switch (gate.type)
+            {
+                case GateType::Or:
+                    gate.value = eInput1 || eInput2;
+                    break;
+                case GateType::And:
+                    gate.value = eInput1 && eInput2;
+                    break;
+                case GateType::Xor:
+                    gate.value = eInput1 ^ eInput2;
+                    break;
+                default:
+                    assert(false);
+            }
+            gate.valueKnown = true;
+        }
+        return gate.value;
     }
 
-    wrapAround = i == combination.size()-1;
-
-    size_t j = 0;
-    while (true)
+    void addInput(const std::string& line)
     {
-        while (j < i && !combination[i])
-        {
-            --i;
-        }
+        auto parts = split(line, ": ");
+        gates.emplace(parts[0], Gate{"", "", GateType::Input, true,
+                      (bool)std::stoi(parts[1])});
+    }
 
-        while (j < i && combination[j])
+    void addGate(const std::string& line)
+    {
+        auto parts = split(line, " ->");
+        GateType gateType;
+        if (parts[1] == "OR")
         {
-            ++j;
+            gateType = GateType::Or;
         }
-        if (j < i)
+        else if (parts[1] == "AND")
         {
-            combination[i] = false;
-            combination[j] = true;
+            gateType = GateType::And;
+        }
+        else if (parts[1] == "XOR")
+        {
+            gateType = GateType::Xor;
         }
         else
         {
-            break;
+            assert(false);
         }
+        gates.emplace(parts[3], Gate{parts[0], parts[2], gateType, false, false});
     }
-
-    return !wrapAround;
-
-}
-
-void displayCombination(const std::vector<bool>& combination)
-{
-    for (bool b : combination)
-    {
-        std::cout << b;
-    }
-    std::cout << std::endl;
-}
-
-std::vector<bool> newCombination(size_t n, size_t k)
-{
-    std::vector<bool> combination(n);
-    for (size_t i = 0; i < k; ++i)
-    {
-        combination[i] = true;
-    }
-    return combination;
-}
-
-bool isClique(const Graph& graph, const std::vector<int>& nodes)
-{
-    for (size_t i = 0; i < nodes.size()-1; ++i)
-    {
-        for (size_t j = i+1; j < nodes.size(); ++j)
-        {
-            if (!graph.hasEdge(nodes[i],nodes[j]))
-            {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-std::vector<int> filter(int u, const std::vector<int>& nodes, const std::vector<bool> filterOut)
-{
-    std::vector<int> filtered;
-    if (!filterOut[u])
-    {
-        filtered.push_back(u);
-    }
-    for (int v : nodes)
-    {
-        if (!filterOut[v])
-        {
-            filtered.push_back(v);
-        }
-    }
-    return filtered;
-}
-
-std::vector<int> subset(const std::vector<int>& nodes, const std::vector<bool>& mask)
-{
-    std::vector<int> result;
-    for (size_t i = 0; i < nodes.size(); ++i)
-    {
-        if (mask[i])
-        {
-            result.push_back(nodes[i]);
-        }
-    }
-    return result;
-}
+};
 
 int main()
 {
-    Graph graph;
+    LogicCircuit logicCircuit;
     std::string line;
-    while (std::getline(std::cin, line))
+    while (std::getline(std::cin, line) && !line.empty()) 
     {
-        std::string uLabel = line.substr(0, 2);
-        std::string vLabel = line.substr(3, 2);
-        graph.addEdge(uLabel, vLabel);
+        logicCircuit.addInput(line);
+    }
+    while (std::getline(std::cin, line)) 
+    {
+        logicCircuit.addGate(line);
     }
 
-    std::vector<bool> filterOut(graph.getNumberOfNodes());
-
-    int maxCliqueSize = 0;
-    std::vector<int> largestClique;
-
-    for (int u = 0; u < graph.getNumberOfNodes(); ++u)
+    uint64_t output = 0;
+    for (const auto&[gateName,_] : logicCircuit.gates)
     {
-        auto cliqueCandidates = filter(u, graph.connectedNodes(u), filterOut);
-        for (int k = std::max(maxCliqueSize+1, 3); k < (int)cliqueCandidates.size(); ++k)
+        if (gateName.front() == 'z')
         {
-            auto combination = newCombination(cliqueCandidates.size(), std::max(maxCliqueSize+1, 3));
-            do
-            {
-                auto nodes = subset(cliqueCandidates, combination);
-                if (isClique(graph, nodes))
-                {
-                    maxCliqueSize = k;
-                    largestClique = nodes;
-                    break;
-                }
-            } while (nextCombination(combination));
+            int position = std::stoi(gateName.substr(1));
+            output |= uint64_t(logicCircuit.eval(gateName)) << position;
         }
-        filterOut[u] = true; 
     }
-
-    std::vector<std::string> cliqueLabels;
-    for (int u : largestClique)
-    {
-        cliqueLabels.push_back(graph.getNodeLabel(u));
-    }
-
-    std::sort(cliqueLabels.begin(), cliqueLabels.end());
-
-    bool first = true;
-    for (const std::string& label : cliqueLabels)
-    {
-        if (!first)
-        {
-            std::cout << ',';
-        }
-        first = false;
-        std::cout << label;
-    }
-    std::cout << std::endl;
-
-    std::cout << maxCliqueSize << std::endl;
+    std::cout << output << std::endl;
 }
