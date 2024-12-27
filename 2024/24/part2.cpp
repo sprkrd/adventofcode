@@ -91,6 +91,65 @@ struct LogicCircuit
         }
         gates.emplace(parts[3], Gate{parts[0], parts[2], gateType, false, false});
     }
+    
+    void dot(std::ostream& out) const
+    {
+        out << "digraph G {\n";
+        
+        std::vector<std::string> inputs;
+        std::vector<std::string> outputs;
+        std::vector<std::string> intermediateNodes;
+        
+        for (const auto&[gateName,_] : gates)
+        {
+            switch (gateName.front())
+            {
+                case 'x':
+                case 'y':
+                    inputs.push_back(gateName);
+                    break;
+                case 'z':
+                    outputs.push_back(gateName);
+                    break;
+                default:
+                    intermediateNodes.push_back(gateName);
+            }
+        }
+        
+        std::sort(inputs.begin(), inputs.end(), [](const std::string& i1, const std::string& i2)
+        {
+            return i1.substr(1)+i1[0] < i2.substr(1)+i2[0];
+        });
+        std::sort(outputs.begin(), outputs.end());
+        
+        out << "subgraph cluster_Inputs {\n";
+        
+        out << "edge[style=invis]\n";
+        
+        for (size_t i = 0; i < inputs.size()-1; ++i)
+        {
+            out << inputs[i] << " -> " << inputs[i+1] << '\n';
+        }
+        
+        out << "label=\"Inputs\"\n";
+        
+        out << "}\n";
+        
+        out << "subgraph cluster_Outputs {\n";
+        
+        out << "edge[style=invis]\n";
+        
+        for (size_t i = 0; i < outputs.size()-1; ++i)
+        {
+            out << outputs[i] << " -> " << outputs[i+1] << '\n';
+        }
+        
+        out << "label=\"Outputs\"\n";
+        
+        out << "}\n";
+        
+        out << "}\n";
+    }
 };
 
 int main()
@@ -106,14 +165,5 @@ int main()
         logicCircuit.addGate(line);
     }
 
-    uint64_t output = 0;
-    for (const auto&[gateName,_] : logicCircuit.gates)
-    {
-        if (gateName.front() == 'z')
-        {
-            int position = std::stoi(gateName.substr(1));
-            output |= uint64_t(logicCircuit.eval(gateName)) << position;
-        }
-    }
-    std::cout << output << std::endl;
+    logicCircuit.dot(std::cout);
 }
