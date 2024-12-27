@@ -8,6 +8,28 @@
 
 enum class GateType { Input, Or, And, Xor };
 
+std::ostream& operator<<(std::ostream& out, GateType gateType)
+{
+    switch (gateType)
+    {
+        case GateType::Input:
+            out << "Input";
+            break;
+        case GateType::Or:
+            out << "Or";
+            break;
+        case GateType::And:
+            out << "And";
+            break;
+        case GateType::Xor:
+            out << "Xor";
+            break;
+        default:
+            assert(false);
+    }
+    return out;
+}
+
 struct Gate
 {
     std::string input1;
@@ -96,7 +118,8 @@ struct LogicCircuit
     {
         out << "digraph G {\n";
         
-        std::vector<std::string> inputs;
+        std::vector<std::string> inputsX;
+        std::vector<std::string> inputsY;
         std::vector<std::string> outputs;
         std::vector<std::string> intermediateNodes;
         
@@ -105,8 +128,10 @@ struct LogicCircuit
             switch (gateName.front())
             {
                 case 'x':
+                    inputsX.push_back(gateName);
+                    break;
                 case 'y':
-                    inputs.push_back(gateName);
+                    inputsY.push_back(gateName);
                     break;
                 case 'z':
                     outputs.push_back(gateName);
@@ -116,26 +141,43 @@ struct LogicCircuit
             }
         }
         
-        std::sort(inputs.begin(), inputs.end(), [](const std::string& i1, const std::string& i2)
-        {
-            return i1.substr(1)+i1[0] < i2.substr(1)+i2[0];
-        });
+        std::sort(inputsX.begin(), inputsX.end());
+        std::sort(inputsY.begin(), inputsY.end());
         std::sort(outputs.begin(), outputs.end());
         
-        out << "subgraph cluster_Inputs {\n";
+        out << "subgraph cluster_InputsX {\n";
         
         out << "edge[style=invis]\n";
         
-        for (size_t i = 0; i < inputs.size()-1; ++i)
+        for (size_t i = 0; i < inputsX.size()-1; ++i)
         {
-            out << inputs[i] << " -> " << inputs[i+1] << '\n';
+            out << inputsX[i] << " -> " << inputsX[i+1] << '\n';
         }
         
-        out << "label=\"Inputs\"\n";
+        out << "label=\"X inputs\"\n";
+        
+        out << "}\n";
+        
+        out << "subgraph cluster_InputsY {\n";
+        
+        out << "edge[style=invis]\n";
+        
+        for (size_t i = 0; i < inputsY.size()-1; ++i)
+        {
+            out << inputsY[i] << " -> " << inputsY[i+1] << '\n';
+        }
+        
+        out << "label=\"Y inputs\"\n";
         
         out << "}\n";
         
         out << "subgraph cluster_Outputs {\n";
+        
+        for (const auto& gateName : intermediateNodes)
+        {
+            const auto& gate = gates.find(gateName)->second;
+            out << gateName << "[label=\"<" << gateName << "<br><b>" << gate.type << "</b>>\",shape=box,style=filled,color=lightgrey]\n";
+        }
         
         out << "edge[style=invis]\n";
         
@@ -147,6 +189,26 @@ struct LogicCircuit
         out << "label=\"Outputs\"\n";
         
         out << "}\n";
+        
+        for (const auto& gateName : intermediateNodes)
+        {
+            const auto& gate = gates.find(gateName)->second;
+            out << gateName << "[label=\"<" << gateName << "<br><b>" << gate.type << "</b>>\",shape=box,style=filled,color=lightgrey]\n";
+        }
+        
+        for (const auto& gateName : intermediateNodes)
+        {
+            const auto& gate = gates.find(gateName)->second;
+            out << gate.input1 << " -> " << gateName << "\n";
+            out << gate.input2 << " -> " << gateName << "\n";
+        }
+        
+        for (const auto& gateName : outputs)
+        {
+            const auto& gate = gates.find(gateName)->second;
+            out << gate.input1 << " -> " << gateName << "\n";
+            out << gate.input2 << " -> " << gateName << "\n";
+        }
         
         out << "}\n";
     }
