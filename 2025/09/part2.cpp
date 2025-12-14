@@ -40,6 +40,11 @@ struct Range
     T low;
     T high;
     
+    Range CreateEmptyRange()
+    {
+        return Range(1, 0);
+    }
+    
     Range(T low = 0, T high = 0) : low(low), high(high) {}
     
     bool Contains(T n) const
@@ -47,19 +52,24 @@ struct Range
         return low <= n && n <= high;
     }
     
-    bool Contains(const Range& other) const
+    Range& MergeUpdate(const Range& other)
     {
-        return low <= other.low && other.high <= high;
+        if (Empty())
+        {
+            low = other.low;
+            high = other.high;
+        }
+        else
+        {
+            low = min(low,other.low);
+            high = max(high,other.high);
+        }
+        return *this;
     }
     
-    Range Merge(const Range& other) const
+    bool IsAdjacent(const Range& other) const
     {
-        return Range(min(low,other.low), max(high,other.high));
-    }
-    
-    Range Intersection(const Range& other) const
-    {
-        return Range(max(low,other.low), min(high,other.high));
+        return low == other.high || high == other.low;
     }
     
     bool Intersects(const Range& other) const
@@ -67,10 +77,14 @@ struct Range
         return Contains(other.low) || other.Contains(low);
     }
     
-    bool operator<(const Range& other) const
+    Range Intersection(const Range& other) const
     {
-        if (low != other.low) return low < other.low;
-        return high < other.high;
+        return Range(max(low,other.low), min(high,other.high));
+    }
+    
+    bool Empty() const
+    {
+        return Size() == 0;
     }
     
     UInt Size() const
@@ -78,6 +92,12 @@ struct Range
         return max(Int(0),high+1-low);
     }
 };
+
+template<class T>
+ostream& operator<<(ostream& out, const Range<T>& range)
+{
+    return out << '[' << range.low << ',' << range.high << ']';
+}
 
 ostream& operator<<(ostream& out, const Point2i& point)
 {
@@ -91,49 +111,30 @@ Int RectangleArea(const Point2i& p1, const Point2i& p2)
     return dx*dy;
 }
 
-struct VerticalSegment
+void PushRange(vector<Range<Int>>& ranges, const Range<Int>& newRange)
 {
-    Int x;
-    Range<Int> yRange;
-    
-    VerticalSegment(const Point2i& begin, const Point2i& end)
-    : x(begin[0])
-    , yRange(min(begin[1],end[1]), max(begin[1],end[1]))
-    {}
-    
-    bool operator<(const VerticalSegment& other) const
+    if (ranges.empty() || !newRange.Intersects(ranges.back()))
     {
-        if (x!=other.x) return x<other.x;
-        return yRange<other.yRange;
-    }jk
-};
-
-
-ostream& operator<<(ostream& out, const Segment& segment)
-{
-    return out << segment.x << ",[" << yRange.low << ',' << yRange.high << ']';
+        ranges.push_back(newRange);
+    }
+    else
+    {
+        ranges.back().MergeUpdate(newRange);
+    }
 }
 
 class Sweeper
 {
     public:
-        Sweeper(const vector<Point2i>& input) : _maxArea(0), _i(0)
+        Sweeper(vector<Point2i> points) : _maxArea(0), _i(0)
         {
-            for (size_t i = 0; i < input.size(); ++i)
-            {
-                auto next = i==input.size()-1? input.front() : input[i+1];
-                if (input[i][0]==next[0])
-                {
-                    _verticalSegments.emplace_back(input[i], next);
-                }
-            }
-            sort(_verticalSegments.begin(), _verticalSegments.end());
-            _closesShape.resize(_verticalSegments.size());
+            _points = move(points);
+            sort(_points.begin(), _points.end());
         }
         
         void SweepUntilEnd()
         {
-            while (_i < _verticalSegments.size())
+            while (_i < _points.size())
             {
                 Advance();
             }
@@ -147,80 +148,136 @@ class Sweeper
     private:
         void Advance()
         {
-            const auto& nextSegment = _verticalSegments[_i];
-            bool intersectsActiveSet = false;
-            for (int j = _i-1; j >= 0; --j)
+            size_t j = _i+2;
+            while (j < _points.size() && _points[j][0] == _points[_i][0])
             {
-                const auto& segment = _verticalSegments[j];
-                
-                if (segment.yRange.Intersection(nextSegment.yRange).Size() > 1) continue;
-                
-                intersectsActiveSet = true;
-                
+                j += 2;
             }
-            for (const auto& verticalSegment : _activeSet)
-            {
-                if (verticalSegment.yRange.Intersection(nextSegment.yRange).Size() <= 1)
-                {
-                    nextActiveSet.push_back(verticalSegment);
-                    continue;
-                }
-                intersectsActiveSet = true;
-                
-            }
-            if (!intersectsActiveSet)
-            {
-                nextActiveSet.push_back(nextSegment);
-                UpdateArea(nextSegment);
-            }
-            _activeSet = move(nextActiveSet);
-            ++_i;
-            cout << "-> ";
-            for (const auto& segment : _activeSet)
-            {
-                cout << segment << "; ";
-            }
-            cout << endl;
+            
+            UpdateActiveFront(j);
+            AddNewVisiblePoints(j);
+            UpdateVisibility();
+            
+            _i = j;
         }
         
-        void UpdateArea(const VerticalSegment& nextSegment)
+        void UpdateActiveFront(size_t j)
         {
-            for (const auto& segment : _activeSet)
+            vector<Range<Int>> newActiveFront;
+            size_t k = 0;
+            for (size_t i = _i; i < j; i += 2)
             {
-                if (segment.redTop&&segment.redBottom&&segment.)
+                const auto& head = _points[i];
+                const auto& tail = _points[i+1];
+                
+                Int yLow = head[1];
+                Int yHigh = tail[1];
+                Range yRange(yLow, yHigh);
+                
+                while (k < _activeFront.size() && _activeFront[k].high < yLow)
                 {
-                    _maxArea = max(_maxArea, RectangleArea(segment.Top(), nextSegment.Bottom()));
-                    cout << segment << " and " << nextSegment << ": " << _maxArea << endl;
+                    PushRange(newActiveFront, _activeFront[k]);
+                    ++k;
                 }
                 
-                if (segment.redBottom&&nextSegment.redTop)
+                if (k == _activeFront.size() || yHigh < _activeFront[k].low)
                 {
-                    _maxArea = max(_maxArea, RectangleArea(segment.Bottom(), nextSegment.Top()));
+                    PushRange(newActiveFront, yRange);
                 }
-                
-                if (segment.redTop&&nextSegment.redTop)
+                else if (yRange.IsAdjacent(_activeFront[k]))
                 {
-                    _maxArea = max(_maxArea, RectangleArea(segment.Top(), nextSegment.Top()));
+                    _activeFront[k].MergeUpdate(yRange);
                 }
-                
-                if (segment.redBottom&&nextSegment.redBottom)
+                else if (yLow == _activeFront[k].low && yHigh < _activeFront[k].high)
                 {
-                    _maxArea = max(_maxArea, RectangleArea(segment.Bottom(), nextSegment.Bottom()));
+                    _activeFront[k].low = yHigh;
+                }
+                else if (yHigh == _activeFront[k].high && yLow > _activeFront[k].low)
+                {
+                    _activeFront[k].high = yLow;
+                }
+                else if (yLow > _activeFront[k].low && yHigh < _activeFront[k].high)
+                {
+                    PushRange(newActiveFront, Range(_activeFront[k].low, yLow));
+                    _activeFront[k].low = yHigh;
+                }
+                else
+                {
+                    ++k;
+                }
+            }
+            
+            while (k < _activeFront.size())
+            {
+                PushRange(newActiveFront, _activeFront[k]);
+                ++k;
+            }
+            
+            _activeFront = move(newActiveFront);
+        }
+        
+        optional<Range<Int>> FindFront(Int y)
+        {
+            for (const auto& front : _activeFront)
+            {
+                if (front.Contains(y))
+                {
+                    return front;
+                }
+            }
+            return {};
+        }
+        
+        void UpdateVisibility()
+        {
+            vector<ActivePoint> newActivePoints;
+            for (const auto& activePoint : _activePoints)
+            {
+                const auto& point = _points[activePoint.pointIndex];
+                if (auto front = FindFront(point[1]))
+                {
+                    auto updatedVisibility = activePoint.visibility.Intersection(*front);
+                    newActivePoints.push_back({activePoint.pointIndex, updatedVisibility});
+                }
+            }
+            _activePoints = move(newActivePoints);
+        }
+        
+        void AddNewVisiblePoints(size_t j)
+        {
+            for (size_t i = _i; i < j; ++i)
+            {
+                const auto& point = _points[i];
+                for (const auto& other : _activePoints)
+                {
+                    if (other.visibility.Contains(point[1]))
+                    {
+                        _maxArea = max(_maxArea, RectangleArea(point, _points[other.pointIndex]));
+                    }
+                }
+                if (auto visibility = FindFront(point[1]))
+                {
+                    _activePoints.push_back({i, *visibility});
                 }
             }
         }
-    
-        vector<VerticalSegment> _verticalSegments;
-        vector<Point2i>
-        vector<bool> _closesShape;
+        
+        struct ActivePoint
+        {
+            size_t pointIndex;
+            Range<Int> visibility;
+        };
+        
+        vector<Point2i> _points;
+        vector<Range<Int>> _activeFront;
+        vector<ActivePoint> _activePoints;
         Int _maxArea;
         size_t _i;
 };
 
 int main()
 {
-    auto input = Input();
-    Sweeper sweeper(input);
+    Sweeper sweeper(Input());
     sweeper.SweepUntilEnd();
     cout << sweeper.GetMaxArea() << endl;
 }
