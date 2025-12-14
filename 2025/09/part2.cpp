@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include "netpbm.hpp"
 using namespace std;
 
 typedef int64_t Int;
@@ -40,11 +41,6 @@ struct Range
     T low;
     T high;
     
-    Range CreateEmptyRange()
-    {
-        return Range(1, 0);
-    }
-    
     Range(T low = 0, T high = 0) : low(low), high(high) {}
     
     bool Contains(T n) const
@@ -54,16 +50,8 @@ struct Range
     
     Range& MergeUpdate(const Range& other)
     {
-        if (Empty())
-        {
-            low = other.low;
-            high = other.high;
-        }
-        else
-        {
-            low = min(low,other.low);
-            high = max(high,other.high);
-        }
+        low = min(low,other.low);
+        high = max(high,other.high);
         return *this;
     }
     
@@ -81,15 +69,18 @@ struct Range
     {
         return Range(max(low,other.low), min(high,other.high));
     }
+};
+
+struct Rectangle
+{
+    Point2i corner1;
+    Point2i corner2;
     
-    bool Empty() const
+    Int Area() const
     {
-        return Size() == 0;
-    }
-    
-    UInt Size() const
-    {
-        return max(Int(0),high+1-low);
+        Int dx = abs(corner2[0]-corner1[0]) + 1;
+        Int dy = abs(corner2[1]-corner1[1]) + 1;
+        return dx*dy;
     }
 };
 
@@ -104,13 +95,6 @@ ostream& operator<<(ostream& out, const Point2i& point)
     return out << '(' << point[0] << ',' << point[1] << ')';
 }
 
-Int RectangleArea(const Point2i& p1, const Point2i& p2)
-{
-    Int dx = abs(p2[0]-p1[0]) + 1;
-    Int dy = abs(p2[1]-p1[1]) + 1;
-    return dx*dy;
-}
-
 void PushRange(vector<Range<Int>>& ranges, const Range<Int>& newRange)
 {
     if (ranges.empty() || !newRange.Intersects(ranges.back()))
@@ -123,9 +107,40 @@ void PushRange(vector<Range<Int>>& ranges, const Range<Int>& newRange)
     }
 }
 
+
 class Sweeper
 {
     public:
+    
+        class IObserver
+        {
+            public:
+            
+                virtual void Notify(const Sweeper& sweeper) = 0;
+            
+                virtual ~IObserver() = default;
+        };
+        
+        Int GetCurrentX() const
+        {
+            return _i < _points.size()? _points[_i][0] : _points.back()[0];
+        }
+        
+        const vector<Range<Int>>& GetCurrentFront() const
+        {
+            return _activeFront;
+        }
+        
+        vector<Point2i> GetActivePoints() const
+        {
+            vector<Point2i> activePoints;
+            for (const auto& point : _activePoints)
+            {
+                activePoints.push_back(_points[point.pointIndex]);
+            }
+            return activePoints;
+        }
+    
         Sweeper(vector<Point2i> points) : _maxArea(0), _i(0)
         {
             _points = move(points);
@@ -140,9 +155,19 @@ class Sweeper
             }
         }
         
+        const Rectangle& GetLargestRectangle() const
+        {
+            return _largestRectangle;
+        }
+        
         Int GetMaxArea() const
         {
             return _maxArea;
+        }
+        
+        void AddObserver(IObserver& observer)
+        {
+            _observers.push_back(&observer);
         }
         
     private:
@@ -157,6 +182,11 @@ class Sweeper
             UpdateActiveFront(j);
             AddNewVisiblePoints(j);
             UpdateVisibility();
+            
+            for (auto* observer : _observers)
+            {
+                observer->Notify(*this);
+            }
             
             _i = j;
         }
@@ -252,7 +282,13 @@ class Sweeper
                 {
                     if (other.visibility.Contains(point[1]))
                     {
-                        _maxArea = max(_maxArea, RectangleArea(point, _points[other.pointIndex]));
+                        Rectangle rectangle = {point, _points[other.pointIndex]};
+                        Int area = rectangle.Area();
+                        if (area > _maxArea)
+                        {
+                            _maxArea = area;
+                            _largestRectangle = rectangle;
+                        }
                     }
                 }
                 if (auto visibility = FindFront(point[1]))
@@ -268,16 +304,136 @@ class Sweeper
             Range<Int> visibility;
         };
         
+        vector<IObserver*> _observers;
         vector<Point2i> _points;
         vector<Range<Int>> _activeFront;
         vector<ActivePoint> _activePoints;
+        Rectangle _largestRectangle;
         Int _maxArea;
         size_t _i;
 };
 
-int main()
+const ash::Pixel kGreenTile = {150,176,8};
+const ash::Pixel kRedTile = {228,8,10};
+const ash::Pixel kFrontierColor = {204,108,231};
+
+class ImageRecorder : public Sweeper::IObserver
 {
-    Sweeper sweeper(Input());
+    public:
+    
+        ImageRecorder(string pathPrefix, size_t frameWidth, size_t frameHeight)
+        : _largestRectangle{0,0}
+        , _pathPrefix(move(pathPrefix))
+        , _background(frameWidth, frameHeight)
+        , _frame(frameWidth, frameHeight)
+        , _frameIdx(0)
+        {
+        }
+        
+        void Init(vector<Point2i> points)
+        {
+            _points = move(points);
+            _x0 = _points[0][0];
+            _y0 = _points[0][1];
+            Int _xmax = _x0;
+            Int _ymax = _y0;
+            for (auto[x,y] : _points)
+            {
+                _x0 = min(x, _x0);
+                _y0 = min(y, _y0);
+                _xmax = max(x, _xmax);
+                _ymax = max(y, _ymax);
+            }
+            _scaleFactor = min((_frame.Width()-1)/double(_xmax-_x0), (_frame.Height()-1)/double(_ymax-_y0));
+        }
+    
+        void Notify(const Sweeper& sweeper) override
+        {
+            Int nextX = sweeper.GetCurrentX();
+            for (const auto& front : _currentFront)
+            {
+                auto begin = WorldToFrameCoords(Point2i{_currentX, front.low});
+                auto end = WorldToFrameCoords(Point2i{nextX, front.high});
+                ash::FillRectangle(_background, begin[0], begin[1], end[0], end[1], kGreenTile);
+            }
+            _currentX = nextX;
+            _currentFront = sweeper.GetCurrentFront();
+            _largestRectangle = sweeper.GetLargestRectangle();
+            Draw();
+        }
+        
+        void Draw()
+        {
+            ostringstream filename;
+            filename << _pathPrefix << setw(3) << setfill('0') << _frameIdx << ".ppm"; 
+            
+            _frame = _background;
+          
+            for (size_t i = 0; i < _points.size(); ++i)
+            {
+                const auto& prev = WorldToFrameCoords(i==0? _points.back() : _points[i-1]);
+                const auto& point = WorldToFrameCoords(_points[i]);
+                ash::DrawSegment(_frame, prev[0], prev[1], point[0], point[1], kGreenTile);
+            }
+            
+            if (_frameIdx > 0)
+            {
+                auto begin = WorldToFrameCoords(_largestRectangle.corner1);
+                auto end = WorldToFrameCoords(_largestRectangle.corner2);
+                ash::FillRectangle(_frame, begin[0], begin[1], end[0], end[1], kRedTile);
+            }
+            
+            for (const auto& point : _points)
+            {
+                const auto& pointImg = WorldToFrameCoords(point);
+                ash::DrawCross(_frame, pointImg[0], pointImg[1], 2, kRedTile);
+            }
+            
+            for (const auto& front : _currentFront)
+            {
+                auto begin = WorldToFrameCoords(Point2i{_currentX, front.low});
+                auto end = WorldToFrameCoords(Point2i{_currentX, front.high});
+                ash::DrawSegment(_frame, begin[0], begin[1], end[0], end[1], kFrontierColor);
+            }
+            
+            
+            _frame.Save(filename.str());
+            ++_frameIdx;
+        }
+        
+    private:
+    
+        Point2i WorldToFrameCoords(const Point2i& point)
+        {
+            return Point2i{(Int)round((point[0]-_x0)*_scaleFactor), (Int)round((point[1]-_y0)*_scaleFactor)};
+        }
+        
+        double _scaleFactor;
+        Int _x0;
+        Int _y0;
+        Int _currentX;
+        vector<Point2i> _points;
+        vector<Range<Int>> _currentFront;
+        Rectangle _largestRectangle;
+        string _pathPrefix;
+        ash::Image _background;
+        ash::Image _frame;
+        size_t _frameIdx;
+};
+
+int main(int argc, char* argv[])
+{
+    string outPrefix = "frame_";
+    int outWidth = 640;
+    int outHeight = 480;
+    if (argc >= 2) outPrefix = argv[1];
+    if (argc >= 3) outWidth = stoi(argv[2]);
+    if (argc >= 4) outHeight = stoi(argv[3]);
+    auto input = Input();
+    ImageRecorder imageRecorder(outPrefix, outWidth, outHeight);
+    imageRecorder.Init(input);
+    Sweeper sweeper(move(input));
+    sweeper.AddObserver(imageRecorder);
     sweeper.SweepUntilEnd();
     cout << sweeper.GetMaxArea() << endl;
 }
