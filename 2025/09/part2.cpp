@@ -359,6 +359,7 @@ class ImageRecorder : public Sweeper::IObserver
             _currentX = nextX;
             _currentFront = sweeper.GetCurrentFront();
             _largestRectangle = sweeper.GetLargestRectangle();
+            _visiblePoints = sweeper.GetActivePoints();
             Draw();
         }
         
@@ -383,10 +384,10 @@ class ImageRecorder : public Sweeper::IObserver
                 ash::FillRectangle(_frame, begin[0], begin[1], end[0], end[1], kRedTile);
             }
             
-            for (const auto& point : _points)
+            for (const auto& point : _visiblePoints)
             {
                 const auto& pointImg = WorldToFrameCoords(point);
-                ash::DrawCross(_frame, pointImg[0], pointImg[1], 2, kRedTile);
+                ash::DrawCross(_frame, pointImg[0], pointImg[1], 3, kRedTile);
             }
             
             for (const auto& front : _currentFront)
@@ -413,6 +414,7 @@ class ImageRecorder : public Sweeper::IObserver
         Int _y0;
         Int _currentX;
         vector<Point2i> _points;
+        vector<Point2i> _visiblePoints;
         vector<Range<Int>> _currentFront;
         Rectangle _largestRectangle;
         string _pathPrefix;
