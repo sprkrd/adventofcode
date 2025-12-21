@@ -3,7 +3,6 @@ using namespace std;
 
 typedef int64_t Int;
 typedef uint64_t UInt;
-typedef array<Int,2> Point2i;
 
 vector<string> Split(const string& str, const string& delim=" \n\t") {
     vector<string> parts;
