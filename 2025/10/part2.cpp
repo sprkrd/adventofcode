@@ -4,9 +4,7 @@ using namespace std;
 typedef int64_t Int;
 typedef uint64_t UInt;
 
-constexpr double kErrorTolerance = 1e-5;
-constexpr UInt kMaxNIterations = 5000;
-mt19937_64 rng;
+constexpr double kErrorTolerance = 1e-9;
 
 // input handling
 
@@ -77,9 +75,16 @@ vector<Row> Input()
     return input;
 }
 
-bool IsBetween(double x, double lo, double hi)
+bool InRange(const vector<double>& x, const vector<double>& lo, const vector<double>& hi)
 {
-    return lo-kErrorTolerance <= x && x <= hi+kErrorTolerance;
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        if (x[i] < lo[i]-kErrorTolerance || x[i] > hi[i]+kErrorTolerance)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 // linear algebra
@@ -87,245 +92,264 @@ bool IsBetween(double x, double lo, double hi)
 ostream& operator<<(ostream& out, const vector<double>& v)
 {
     out << '[';
-    out << v[0];
-    for (size_t i = 1; i < v.size(); ++i) out << ',' << v[i];
+    if (!v.empty())
+    {
+        out << v[0];
+        for (size_t i = 1; i < v.size(); ++i) out << ',' << v[i];
+    }
     return out << ']';
 }
 
-vector<double> operator+(const vector<double>& v, const vector<double>& u)
+bool IsInteger(double x)
 {
-    vector<double> result(v.size());
-    for (size_t i = 0; i < v.size(); ++i)
-    {
-        result[i] = u[i] + v[i];
-    }
-    return result;
+    return fabs(x-round(x)) < kErrorTolerance;
 }
 
-vector<double>& operator+=(vector<double>& u, const vector<double>& v)
+class System
 {
-    for (size_t i = 0; i < v.size(); ++i)
-    {
-        u[i] += v[i];
-    }
-    return u;
-}
+    public:
 
-vector<double> operator-(const vector<double>& v, const vector<double>& u)
-{
-    vector<double> result(v.size());
-    for (size_t i = 0; i < v.size(); ++i)
-    {
-        result[i] = u[i] - v[i];
-    }
-    return result;
-}
-
-vector<double>& operator-=(vector<double>& u, const vector<double>& v)
-{
-    for (size_t i = 0; i < v.size(); ++i)
-    {
-        u[i] -= v[i];
-    }
-    return u;
-}
-
-vector<double> operator*(double f, const vector<double>& u)
-{
-    vector<double> result(u.size());
-    for (size_t i = 0; i < u.size(); ++i)
-    {
-        result[i] = f*u[i];
-    }
-    return result;
-}
-
-vector<double> operator*(const vector<double>& u, double f)
-{
-    return f*u;
-}
-
-vector<double>& operator*=(vector<double>& u, double f)
-{
-    for (double& x : u)
-    {
-        x *= f;
-    }
-    return u;
-}
-
-double SumAbs(const vector<double>& u)
-{
-    return accumulate(u.begin(), u.end(), 0.0, [](double acc, double x){ return acc + fabs(x);});
-}
-
-double Dot(const vector<double>& u, const vector<double>& v)
-{
-    double ans = 0;
-    for (size_t i = 0; i < u.size(); ++i)
-    {
-        ans += u[i]*v[i];
-    }
-    return ans;
-}
-
-double SquaredNorm(const vector<double>& u)
-{
-    return Dot(u,u);
-}
-
-double Norm(const vector<double>& u)
-{
-    return sqrt(SquaredNorm(u));
-}
-
-void Normalize(vector<double>& u)
-{
-    double invNorm = 1.0 / Norm(u);
-    u *= invNorm;
-}
-
-void RemoveProjection(vector<double>& u, const vector<double>& v)
-{
-    double normSq = SquaredNorm(v);
-    double dot = Dot(u, v);
-    double f = dot/normSq;
-    u -= f*v;
-}
-
-void NormalizeRow(vector<vector<double>>& a, vector<double>& b, size_t row, size_t pivot)
-{
-    double f = 1.0 / a[row][pivot];
-    a[row][pivot] = 1.0;
-    for (size_t i = pivot+1; i < a[row].size(); ++i)
-    {
-        a[row][i] *= f;
-    }
-    b[row] *= f;
-}
-
-void Reduce(vector<vector<double>>& a, vector<double>& b, size_t row, size_t pivot)
-{
-    NormalizeRow(a, b, row, pivot);
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        if (i==row) continue;
-        double f = a[i][pivot];
-        a[i][pivot] = 0;
-        for (size_t j = pivot+1; j < a[i].size(); ++j)
+        System(vector<vector<double>> a, vector<double> b)
+            : _a(move(a))
+            , _b(move(b))
         {
-            a[i][j] -= a[row][j]*f;
         }
-        b[i] -= b[row]*f;
-    }
-}
 
-void ReducedRowEchelon(vector<vector<double>>& a, vector<double>& b)
-{
-    size_t currentRow = 0;
-    size_t currentPivot = 0;
-    while (currentRow < a.size() && currentPivot < a[0].size())
-    {
-        for (size_t i = currentRow; i < a.size(); ++i)
+        bool Solve()
         {
-            if (fabs(a[i][currentPivot]) >= kErrorTolerance)
+            ReducedRowEchelon();
+            for (size_t i = 0; i < _a.size(); ++i)
             {
-                swap(a[currentRow], a[i]);
-                swap(b[currentRow], b[i]);
-                Reduce(a, b, currentRow, currentPivot);
-                ++currentRow;
-                break;
+                bool allZeroes = all_of(_a[i].begin(), _a[i].end(),
+                        [](double x) {return fabs(x) < kErrorTolerance; });
+                if (allZeroes && fabs(_b[i] >= kErrorTolerance))
+                {
+                    return false;
+                }
+            }
+
+            _x.resize(_a[0].size());
+
+            for (size_t i = 0; i < _pivots.size(); ++i)
+            {
+                _x[_pivots[i]] = _b[i];
+            }
+
+            _nullSpace.clear();
+            for (size_t freeVar : _freeVariables)
+            {
+                vector<double> nullVector(_a[0].size());
+                nullVector[freeVar] = 1.0;
+                for (size_t i = 0; i < _pivots.size(); ++i)
+                {
+                    nullVector[_pivots[i]] = -_a[i][freeVar];
+                }
+                _nullSpace.push_back(move(nullVector));
+            }
+
+            return true;
+        }
+
+        const vector<double>& GetSolution() const
+        {
+            return _x;
+        }
+
+        const vector<vector<double>>& GetNullSpace() const
+        {
+            return _nullSpace;
+        }
+
+        size_t DegreesOfFreedom() const
+        {
+            return _nullSpace.size();
+        }
+
+    private:
+
+        void NormalizeRow(size_t row, size_t pivot)
+        {
+            double f = 1.0 / _a[row][pivot];
+            _a[row][pivot] = 1.0;
+            for (size_t i = pivot+1; i < _a[row].size(); ++i)
+            {
+                _a[row][i] *= f;
+            }
+            _b[row] *= f;
+        }
+
+        void Reduce(size_t row, size_t pivot)
+        {
+            NormalizeRow(row, pivot);
+            for (size_t i = 0; i < _a.size(); ++i)
+            {
+                if (i==row) continue;
+                double f = _a[i][pivot];
+                _a[i][pivot] = 0;
+                for (size_t j = pivot+1; j < _a[i].size(); ++j)
+                {
+                    _a[i][j] -= _a[row][j]*f;
+                    
+                }
+                _b[i] -= _b[row]*f;
             }
         }
-        ++currentPivot;
-    }
-}
 
-struct SystemSolution
-{
-    vector<double> basicSolution;
-    vector<vector<double>> nullSpace;
+        void ReducedRowEchelon()
+        {
+            _pivots.clear();
+            _freeVariables.clear();
+            size_t currentRow = 0;
+            size_t currentPivot = 0;
+            while (currentRow < _a.size() && currentPivot < _a[0].size())
+            {
+                bool isFreeVariable = true;
+                for (size_t i = currentRow; i < _a.size(); ++i)
+                {
+                    if (fabs(_a[i][currentPivot]) >= kErrorTolerance)
+                    {
+                        isFreeVariable = false;
+                        _pivots.push_back(currentPivot);
+                        swap(_a[currentRow], _a[i]);
+                        swap(_b[currentRow], _b[i]);
+                        Reduce(currentRow, currentPivot);
+                        ++currentRow;
+                        break;
+                    }
+                }
+                if (isFreeVariable)
+                {
+                    _freeVariables.push_back(currentPivot);
+                }
+                ++currentPivot;
+            }
+            while (currentPivot < _a[0].size())
+            {
+                _freeVariables.push_back(currentPivot++);
+            }
+        }
+
+        vector<size_t> _pivots;
+        vector<size_t> _freeVariables;
+
+        vector<vector<double>> _a;
+        vector<double> _b;
+
+        vector<double> _x;
+        vector<vector<double>> _nullSpace;
 };
-
-pair<vector<size_t>,vector<size_t>> GetPivotsAndFreeVariables(const vector<vector<double>>& a, const vector<double>& b)
-{
-    vector<size_t> pivots;
-    vector<size_t> freeVariables;
-    size_t currentRow = 0;
-    size_t currentPivot = 0;
-    while (currentRow < a.size() && currentPivot < a[0].size())
-    {
-        bool isFreeVariable = true;
-        for (size_t i = currentRow; i < a.size(); ++i)
-        {
-            if (fabs(a[i][currentPivot] - 1.0) < kErrorTolerance)
-            {
-                isFreeVariable = false;
-                pivots.push_back(currentPivot);
-                ++currentRow;
-                break;
-            }
-        }
-        if (isFreeVariable)
-        {
-            freeVariables.push_back(currentPivot);
-        }
-        ++currentPivot;
-    }
-    while (currentPivot < a[0].size())
-    {
-        freeVariables.push_back(currentPivot++);
-    }
-    return {pivots, freeVariables};
-}
-
-void GramSchmidt(vector<vector<double>>& vectorSpace)
-{
-    vector<vector<double>> orthonormalSpace;
-    for (size_t i = 0; i < vectorSpace.size(); ++i)
-    {
-        vector<double> u = vectorSpace[i];
-        for (size_t j = 0; j < i; ++j)
-        {
-            RemoveProjection(u, orthonormalSpace[j]);
-        }
-        Normalize(u);
-        orthonormalSpace.push_back(move(u));
-    }
-    vectorSpace = move(orthonormalSpace);
-}
-
-SystemSolution LinSolve(vector<vector<double>> a, vector<double>b)
-{
-    SystemSolution solution;
-    solution.basicSolution.resize(a[0].size());
-    ReducedRowEchelon(a, b);
-    auto[pivots, freeVariables] = GetPivotsAndFreeVariables(a, b);
-    for (size_t i = 0; i < pivots.size(); ++i)
-    {
-        solution.basicSolution[pivots[i]] = b[i];
-    }
-    for (size_t freeVar : freeVariables)
-    {
-        vector<double> nullVector(a[0].size());
-        nullVector[freeVar] = 1.0;
-        for (size_t i = 0; i < pivots.size(); ++i)
-        {
-            nullVector[pivots[i]] = -a[i][freeVar];
-        }
-        solution.nullSpace.push_back(move(nullVector));
-    }
-    return solution;
-}
 
 class LPSolver
 {
     public:
 
-        explicit LPSolver(const Row& row)
+        LPSolver(vector<vector<double>> a, vector<double> b, const vector<double>& lowerBounds, const vector<double>& upperBounds)
+            : _a(move(a))
+            , _b(move(b))
+            , _lowerBounds(lowerBounds)
+            , _upperBounds(upperBounds)
+            , _x(_a[0].size())
+            , _nVertices(0)
+            , _minObj(numeric_limits<double>::infinity())
+        {
+        }
+
+        bool Solve()
+        {
+            System system(_a, _b);
+            if (!system.Solve())
+            {
+                return false;
+            }
+
+            if (system.DegreesOfFreedom() == 0)
+            {
+                _x = system.GetSolution();
+                _minObj = accumulate(_x.begin(), _x.end(), 0.0);
+                return InRange(_x, _lowerBounds, _upperBounds);
+            }
+
+            return Solve(_x.size(), system.DegreesOfFreedom());
+        }
+
+        const vector<double>& GetSolution() const
+        {
+            return _x;
+        }
+
+        double Obj() const
+        {
+            return _minObj; //accumulate(_x.begin(), _x.end(), 0.0);
+        }
+
+    private:
+
+        bool Solve(size_t i, size_t dof)
+        {
+            if (dof == 0)
+            {
+                ++_nVertices;
+                System system(_a, _b);
+                bool okSolution = system.Solve() &&
+                    system.DegreesOfFreedom() == 0 &&
+                    InRange(system.GetSolution(), _lowerBounds, _upperBounds);
+                if (!okSolution)
+                {
+                    return false;
+                }
+                const auto& x = system.GetSolution();
+                double obj = accumulate(x.begin(), x.end(), 0.0);
+                if (obj < _minObj)
+                {
+                    _x = x;
+                    _minObj = obj;
+                }
+                return true;
+            }
+
+            bool solutionFound = false;
+            if (i > dof)
+            {
+                solutionFound = Solve(i-1, dof);
+            }
+            vector<double> constraint(_a[0].size());
+            constraint[i-1] = 1.0;
+
+            _a.push_back(move(constraint));
+            _b.push_back(_lowerBounds[i-1]);
+            solutionFound = Solve(i-1, dof-1) || solutionFound;
+
+            if (_upperBounds[i-1] < numeric_limits<double>::infinity())
+            {
+                _b.back() = _upperBounds[i-1];
+                solutionFound = Solve(i-1, dof-1) || solutionFound;
+            }
+
+            _a.pop_back();
+            _b.pop_back();
+
+            return solutionFound;
+        }
+
+        vector<vector<double>> _a;
+        vector<double> _b;
+        const vector<double>& _lowerBounds;
+        const vector<double>& _upperBounds;
+        vector<double> _x;
+        size_t _nVertices;
+        double _minObj;
+
+};
+
+class IPSolver
+{
+    public:
+
+        explicit IPSolver(const Row& row)
             : _a(row.joltages.size(), vector<double>(row.buttons.size()))
             , _b(row.joltages.size())
             , _x(row.buttons.size())
+            , _upperBound(numeric_limits<double>::infinity())
             , _xLowBounds(row.buttons.size(), 0)
             , _xHighBounds(row.buttons.size(), numeric_limits<double>::infinity())
         {
@@ -339,32 +363,13 @@ class LPSolver
                         _a[i][j] = 1.0;
                     }
                 }
-                // double invNorm = 1.0 / Norm(_a[i]);
-                // _a[i] *= invNorm;
-                _b[i] = row.joltages[i]; //*invNorm;
+                _b[i] = row.joltages[i];
             }
-            Init();
         }
 
-        void Solve()
-        {   
-            size_t nIterations = 0;
-            while (nIterations<kMaxNIterations && CheckConstraints())
-            {
-                ++nIterations;
-            }
-            if (nIterations == 5000)
-            {
-                bool first = true;
-                for (const auto& nullVector : _systemSolution.nullSpace)
-                {
-                    if (!first) cout << ", ";
-                    cout << nullVector;
-                    first = false;
-                }
-                cout << endl;
-            }
-            cout << nIterations << " iteration(s), error = " << TotalError() << endl;
+        bool Solve()
+        {
+            return SolveR();
         }
 
         const vector<double>& GetSolution() const
@@ -372,168 +377,74 @@ class LPSolver
             return _x;
         }
 
+        unsigned Obj() const
+        {
+            return static_cast<unsigned>(round(_upperBound));
+        }
+
     private:
-    
-        bool CheckConstraints()
-        {
-            for (size_t var = 0; var < _x.size(); ++var)
-            {
-                if (_x[var] < _xLowBounds[var]-kErrorTolerance)
-                {
-                    ReprojectIntoFeasibleRegion(var, _xLowBounds[var]-_x[var]);
-                    return true;
-                }
-                else if (_x[var] > _xHighBounds[var]+kErrorTolerance)
-                {
-                    ReprojectIntoFeasibleRegion(var, _xHighBounds[var]-_x[var]);
-                    return true;
-                }
-            }
-            return false;
-        }
-        
-        void ReprojectIntoFeasibleRegion(size_t var, double errorMagnitude)
-        {
-            vector<double> error(_x.size());
-            error[var] = errorMagnitude;
-            vector<double> errorNullProjection = ProjectOntoNullSpace(error);
-            assert(fabs(errorNullProjection[var]) > 0);
-            double lambda = errorMagnitude/errorNullProjection[var];
-            assert(lambda < 1e18);
-            _x += lambda*errorNullProjection;
-        }
-    
-        double TotalError() const
-        {
-            double totalError = 0;
-            for (size_t i = 0; i < _a.size(); ++i)
-            {
-                totalError += fabs(Error(i));
-            }
-            return totalError;
-        }
 
-        double Error(size_t i) const
+        bool SolveR()
         {
-            return Dot(_a[i], _x) - _b[i];
-        }
-
-        void ProjectOntoPlane(size_t i)
-        {
-            double error = Error(i);
-            for (size_t j = 0; j < _x.size(); ++j)
+            LPSolver lpSolver(_a, _b, _xLowBounds, _xHighBounds);
+            if (!lpSolver.Solve() || lpSolver.Obj() >= _upperBound)
             {
-                _x[j] -= error*_a[i][j];
+                return false;
             }
-        }
-        
-        vector<double> ProjectOntoNullSpace(const vector<double>& v)
-        {
-            vector<double> projection(_x.size());
-            for (const auto& nullVector : _systemSolution.nullSpace)
+            const auto& x = lpSolver.GetSolution();
+            double obj = accumulate(x.begin(), x.end(), 0.0);
+            auto it = find_if_not(x.begin(), x.end(), IsInteger);
+            if (it == x.end())
             {
-                double f = Dot(v, nullVector);
-                for (size_t i = 0; i < projection.size(); ++i)
+                if (obj < _upperBound)
                 {
-                    projection[i] += f*nullVector[i];
+                    _upperBound = obj;
+                    _x = x;
                 }
+                return true;
             }
-            return projection;
-        }
-        
-        void Init()
-        {
-            _systemSolution = LinSolve(_a, _b);
-            _x = _systemSolution.basicSolution;
-            GramSchmidt(_systemSolution.nullSpace);
+
+            bool found = false;
+            size_t i = it - x.begin();
+
+            double prevLowBound = _xLowBounds[i];
+            _xLowBounds[i] = ceil(x[i]);
+            found = SolveR() || found;
+            _xLowBounds[i] = prevLowBound;
+
+            double prevUpperBound = _xHighBounds[i];
+            _xHighBounds[i] = floor(x[i]);
+            found = SolveR() || found;
+            _xHighBounds[i] = prevUpperBound;
+
+            return found;
         }
 
         vector<vector<double>> _a;
         vector<double> _b;
         vector<double> _x;
-        SystemSolution _systemSolution;
+        double _upperBound;
         vector<double> _xLowBounds;
         vector<double> _xHighBounds;
 };
 
 int main()
 {
-    // vector<vector<double>> A{
-        // {-3,2,-1,-1},
-        // {6,-6,7,-7},
-        // {3,-4,4,-6}
-    // };
-    // vector<double> b{1,2,3};
-    // vector<vector<double>> A{
-        // {1,3,3,8,5},
-        // {0,1,3,10,8},
-        // {0,0,0,-1,-4},
-        // {0,0,0,2,8}
-    // };
-    // vector<double> b{1,2,3,4};
-    // vector<vector<double>> A{
-        // {0,1,1,0},
-        // {1,0,0,1},
-        // {1,-1,0,1},
-        // {0,0,-1,-1}
-    // };
-    // vector<double> b{1,2,3,4};
-
-    // auto solution = LinSolve(A, b);
-
-    // cout << "Basic solution: " << solution.basicSolution << endl;
-    // cout << "Null space: <";
-    // bool first = true;
-    // for (const auto& nullVector : solution.nullSpace)
-    // {
-        // if (!first) cout << ", ";
-        // cout << nullVector;
-        // first = false;
-    // }
-    // cout << '>' << endl;
-    // GramSchmidt(solution.nullSpace);
-    // cout << "Null space (orthonormal basis): <";
-    // first = true;
-    // for (const auto& nullVector : solution.nullSpace)
-    // {
-        // if (!first) cout << ", ";
-        // cout << nullVector;
-        // first = false;
-    // }
-    // cout << '>' << endl;
-
-
-    // ReducedRowEchelon(A, b);
-    // for (const auto& row : A)
-    // {
-        // for (auto column : row)
-        // {
-            // cout << column << '\t';
-        // }
-        // cout << endl;
-    // }
-
-    // cout << endl;
-    // for (double row : b)
-    // {
-        // cout << row << '\t';
-    // }
-    // cout << endl;
-    rng.seed(random_device{}());
-
     auto input = Input();
-    
+    unsigned answer = 0;    
     for (const auto& row : input)
     {
-        LPSolver solver(row);
-        solver.Solve();
-        const auto& x = solver.GetSolution();
-        cout << '[';
-        for (size_t i = 0; i < x.size(); ++i)
-        {
-            if (i > 0) cout << ',';
-            cout << x[i];
-        }
-        cout << ']' << endl;
+        IPSolver solver(row);
+        assert(solver.Solve());
+        answer += solver.Obj();
+        //const auto& x = solver.GetSolution();
+        //cout << '[';
+        //for (size_t i = 0; i < x.size(); ++i)
+        //{
+            //if (i > 0) cout << ',';
+            //cout << x[i];
+        //}
+        //cout << ']' << endl;
     }
+    cout << answer << endl;
 }
