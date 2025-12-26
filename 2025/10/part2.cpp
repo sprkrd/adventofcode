@@ -4,7 +4,8 @@ using namespace std;
 typedef int64_t Int;
 typedef uint64_t UInt;
 
-constexpr double kErrorTolerance = 1e-9;
+constexpr double kErrorTolerance = 1e-12;
+constexpr double kInf = numeric_limits<double>::infinity();
 
 // input handling
 
@@ -75,20 +76,6 @@ vector<Row> Input()
     return input;
 }
 
-bool InRange(const vector<double>& x, const vector<double>& lo, const vector<double>& hi)
-{
-    for (size_t i = 0; i < x.size(); ++i)
-    {
-        if (x[i] < lo[i]-kErrorTolerance || x[i] > hi[i]+kErrorTolerance)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-// linear algebra
-
 ostream& operator<<(ostream& out, const vector<double>& v)
 {
     out << '[';
@@ -105,240 +92,394 @@ bool IsInteger(double x)
     return fabs(x-round(x)) < kErrorTolerance;
 }
 
-class System
+struct Constraint
+{
+    enum Type { Equality, LessOrEqual, GreaterOrEqual };
+    Type type;
+    std::vector<double> left;
+    double right;
+};
+
+enum class LPResult { Ok, Infeasible, Unbound };
+
+ostream& operator<<(ostream& out, LPResult result)
+{
+    switch (result)
+    {
+        case LPResult::Ok:
+            out << "Ok";
+            break;
+        case LPResult::Infeasible:
+            out << "Infeasible";
+            break;
+        case LPResult::Unbound:
+            out << "Unbound";
+            break;
+    }
+    return out;
+}
+
+class LPSolver
 {
     public:
 
-        System(vector<vector<double>> a, vector<double> b)
-            : _a(move(a))
-            , _b(move(b))
+        LPSolver()
+            : _nProblemVariables(0)
+            , _nSlackVariables(0)
+            , _nSurplusVariables(0)
+            , _nArtificialVariables(0)
         {
         }
 
-        bool Solve()
+        LPResult Solve()
         {
-            ReducedRowEchelon();
-            for (size_t i = 0; i < _a.size(); ++i)
+            SetUpTableau();
+            auto result = Phase1();
+            if (result != LPResult::Ok)
             {
-                bool allZeroes = all_of(_a[i].begin(), _a[i].end(),
-                        [](double x) {return fabs(x) < kErrorTolerance; });
-                if (allZeroes && fabs(_b[i] >= kErrorTolerance))
+                return result;
+            }
+            auto ret = Phase2();
+            return ret;
+        }
+
+        void AddConstraint(Constraint constraint)
+        {
+            if (_nProblemVariables == 0)
+            {
+                _nProblemVariables = constraint.left.size();
+            }
+            else
+            {
+                assert(constraint.left.size() == _nProblemVariables);
+            }
+            switch (constraint.type)
+            {
+                case Constraint::Equality:
+                    ++_nArtificialVariables;
+                    break;
+                case Constraint::LessOrEqual:
+                    ++_nSlackVariables;
+                    break;
+                case Constraint::GreaterOrEqual:
+                    ++_nSurplusVariables;
+                    ++_nArtificialVariables;
+                    break;
+            }
+            _constraints.push_back(move(constraint)); 
+        }
+
+        void AddBoundConstraint(size_t var, double bound, Constraint::Type type)
+        {
+            Constraint constraint;
+            constraint.left.resize(_nProblemVariables);
+            constraint.left[var] = 1.0;
+            constraint.right = bound;
+            constraint.type = type;
+            AddConstraint(move(constraint));
+
+        }
+
+        void AddLowerBoundConstraint(size_t var, double lowerBound)
+        {
+            AddBoundConstraint(var, lowerBound, Constraint::GreaterOrEqual);
+        }
+
+        void AddUpperBoundConstraint(size_t var, double upperBound)
+        {
+            AddBoundConstraint(var, upperBound, Constraint::LessOrEqual);
+        }
+
+        void PopConstraint()
+        {
+            switch (_constraints.back().type)
+            {
+                case Constraint::Equality:
+                    --_nArtificialVariables;
+                    break;
+                case Constraint::LessOrEqual:
+                    --_nSlackVariables;
+                    break;
+                case Constraint::GreaterOrEqual:
+                    --_nSurplusVariables;
+                    --_nArtificialVariables;
+                    break;
+            }
+            _constraints.pop_back();
+        }
+
+        void SetObjective(vector<double> objective)
+        {
+            if (_nProblemVariables == 0)
+            {
+                _nProblemVariables = objective.size();
+            }
+            else
+            {
+                assert(_nProblemVariables == objective.size());
+            }
+            _objective = move(objective);
+        }
+
+        void ShowTableau(ostream& out) const
+        {
+            constexpr size_t cellWidth = 8;
+            out << right << setw(cellWidth) << "basic";
+            for (size_t i = 0; i < _tableau[0].size()-1; ++i)
+            {
+                string varname = "x" + to_string(i);
+                out << setw(cellWidth) << right << varname;
+            }
+            out << right << setw(cellWidth) << "RHS" << '\n';
+            out.precision(2);
+            out.setf(ios::fixed);
+            for (size_t i = 0; i < _basicVariables.size(); ++i)
+            {
+                string varname = "x" + to_string(_basicVariables[i]);
+                out << right << setw(cellWidth) << varname;
+                for (double x : _tableau[i])
                 {
-                    return false;
+                    out << right <<setw(cellWidth) << x;
+                }
+                out << '\n';;
+            }
+            out << right << setw(cellWidth) << "z";
+            for (double x : _tableau.back())
+            {
+                out << right << setw(cellWidth) << x;
+            }
+            out << '\n';
+        }
+
+        vector<double> GetSolution() const
+        {
+            vector<double> solution(_nProblemVariables);
+            for (size_t i = 0; i < _tableau.size()-1; ++i)
+            {
+                if (_basicVariables[i] < _nProblemVariables)
+                {
+                    solution[_basicVariables[i]] = _tableau[i].back();
                 }
             }
-
-            _x.resize(_a[0].size());
-
-            for (size_t i = 0; i < _pivots.size(); ++i)
-            {
-                _x[_pivots[i]] = _b[i];
-            }
-
-            _nullSpace.clear();
-            for (size_t freeVar : _freeVariables)
-            {
-                vector<double> nullVector(_a[0].size());
-                nullVector[freeVar] = 1.0;
-                for (size_t i = 0; i < _pivots.size(); ++i)
-                {
-                    nullVector[_pivots[i]] = -_a[i][freeVar];
-                }
-                _nullSpace.push_back(move(nullVector));
-            }
-
-            return true;
+            return solution;
         }
 
-        const vector<double>& GetSolution() const
+        double Objective() const
         {
-            return _x;
-        }
-
-        const vector<vector<double>>& GetNullSpace() const
-        {
-            return _nullSpace;
-        }
-
-        size_t DegreesOfFreedom() const
-        {
-            return _nullSpace.size();
+            return _tableau.back().back();
         }
 
     private:
 
         void NormalizeRow(size_t row, size_t pivot)
         {
-            double f = 1.0 / _a[row][pivot];
-            _a[row][pivot] = 1.0;
-            for (size_t i = pivot+1; i < _a[row].size(); ++i)
+            double scale = 1.0 / _tableau[row][pivot];
+            for (size_t j = 0; j < _tableau[row].size(); ++j)
             {
-                _a[row][i] *= f;
+                _tableau[row][j] *= scale;
             }
-            _b[row] *= f;
         }
 
-        void Reduce(size_t row, size_t pivot)
+        void Reduce(size_t src, size_t dst, size_t pivot)
+        {
+            double f = - _tableau[dst][pivot];
+            for (size_t j = 0; j < _tableau[dst].size(); ++j)
+            {
+                _tableau[dst][j] += f*_tableau[src][j];
+            }
+        }
+
+        optional<size_t> ChooseEnteringVariable()
+        {
+            auto it = max_element(_tableau.back().begin(), _tableau.back().end()-1);
+            if (*it > kErrorTolerance)
+            {
+                return it - _tableau.back().begin();
+            }
+            return {};
+        }
+
+        optional<size_t> ChooseLeavingVariable(size_t pivot)
+        {
+            double minRatio = kInf;
+            optional<size_t> leaving;
+            for (size_t i = 0; i < _tableau.size()-1; ++i)
+            {
+                if (_tableau[i][pivot] < kErrorTolerance)
+                {
+                    continue;
+                }
+                double ratio = _tableau[i].back() / _tableau[i][pivot];
+                if (ratio < minRatio)
+                {
+                    minRatio = ratio;
+                    leaving = i;
+                }
+            }
+            return leaving;
+        }
+
+        void EnterNewVariable(size_t row, size_t pivot)
         {
             NormalizeRow(row, pivot);
-            for (size_t i = 0; i < _a.size(); ++i)
+            for (size_t otherRow = 0; otherRow < _tableau.size(); ++otherRow)
             {
-                if (i==row) continue;
-                double f = _a[i][pivot];
-                _a[i][pivot] = 0;
-                for (size_t j = pivot+1; j < _a[i].size(); ++j)
+                if (row == otherRow) continue;
+                Reduce(row, otherRow, pivot);
+            }
+            _basicVariables[row] = pivot;
+        }
+
+        LPResult Run()
+        {
+            while (auto pivot = ChooseEnteringVariable())
+            {
+                if (auto leavingRow = ChooseLeavingVariable(*pivot))
                 {
-                    _a[i][j] -= _a[row][j]*f;
-                    
+                    EnterNewVariable(*leavingRow, *pivot);
                 }
-                _b[i] -= _b[row]*f;
+                else
+                {
+                    return LPResult::Unbound;
+                }
+            }
+            return LPResult::Ok;
+        }
+
+        LPResult Phase1()
+        {
+            auto result = Run();
+            assert(result != LPResult::Unbound);
+            double obj = _tableau.back().back();
+            return obj < kErrorTolerance? LPResult::Ok : LPResult::Infeasible;
+        }
+
+        LPResult Phase2()
+        {
+            EliminateArtificialVariables();
+            fill(_tableau.back().begin(), _tableau.back().end(), 0);
+            for (size_t j = 0; j < _objective.size(); ++j)
+            {
+                _tableau.back()[j] = -_objective[j];
+            }
+            _tableau.back().back() = 0;
+            MakeCanonical();
+            return Run();
+        }
+
+        void EliminateArtificialVariables()
+        {
+            size_t nVariables = _tableau[0].size() - 1;
+            size_t firstArtificialVariable = nVariables - _nArtificialVariables;
+
+            vector<bool> keep(_tableau.size(), true);
+            for (size_t i = 0; i < _basicVariables.size(); ++i)
+            {
+                bool isArtificial = _basicVariables[i] >= firstArtificialVariable;
+                if (!isArtificial)
+                {
+                    continue;
+                }
+                auto end = _tableau[i].begin() + firstArtificialVariable;
+                auto picked = find_if(_tableau[i].begin(), end,
+                        [](double x){return fabs(x) > kErrorTolerance;});
+                if (picked == end)
+                {
+                    keep[i] = false;
+                    continue;
+                }
+                size_t pivot = picked - _tableau[i].begin();
+                EnterNewVariable(i, pivot);
+            }
+
+            FilterTableau(keep);
+
+            for (auto& row : _tableau)
+            {
+                row.erase(row.end()-_nArtificialVariables-1, row.end()-1);
             }
         }
 
-        void ReducedRowEchelon()
+        void MakeCanonical()
         {
-            _pivots.clear();
-            _freeVariables.clear();
-            size_t currentRow = 0;
-            size_t currentPivot = 0;
-            while (currentRow < _a.size() && currentPivot < _a[0].size())
+            for (size_t i = 0; i < _basicVariables.size(); ++i)
             {
-                bool isFreeVariable = true;
-                for (size_t i = currentRow; i < _a.size(); ++i)
+                if (fabs(_tableau.back()[_basicVariables[i]]) > kErrorTolerance)
                 {
-                    if (fabs(_a[i][currentPivot]) >= kErrorTolerance)
-                    {
-                        isFreeVariable = false;
-                        _pivots.push_back(currentPivot);
-                        swap(_a[currentRow], _a[i]);
-                        swap(_b[currentRow], _b[i]);
-                        Reduce(currentRow, currentPivot);
-                        ++currentRow;
+                    Reduce(i, _tableau.size()-1, _basicVariables[i]);
+                }
+            }
+        }
+
+        void SetUpTableau()
+        {
+            size_t nVariables = _nProblemVariables + _nSlackVariables + _nSurplusVariables + _nArtificialVariables;
+            size_t currentSlackVariable = _nProblemVariables;
+            size_t currentSurplusVariable = currentSlackVariable + _nSlackVariables;
+            size_t currentArtificialVariable = currentSurplusVariable + _nSurplusVariables; 
+            
+            _basicVariables.clear();
+            _tableau.clear();
+            _tableau.resize(1 + _constraints.size(), vector<double>(nVariables+1));
+
+            for (size_t i = 0; i < _constraints.size(); ++i)
+            {
+                _tableau[i].back() = _constraints[i].right;
+                for (size_t j = 0; j < _nProblemVariables; ++j)
+                {
+                    _tableau[i][j] = _constraints[i].left[j];
+                }
+                switch (_constraints[i].type)
+                {
+                    case Constraint::Equality:
+                        _basicVariables.push_back(currentArtificialVariable);
+                        _tableau.back()[currentArtificialVariable] = -1.0;
+                        _tableau[i][currentArtificialVariable++] = 1.0;
                         break;
-                    }
+                    case Constraint::LessOrEqual:
+                        _basicVariables.push_back(currentSlackVariable);
+                        _tableau[i][currentSlackVariable++] = 1.0;
+                        break;
+                    case Constraint::GreaterOrEqual:
+                        _basicVariables.push_back(currentArtificialVariable);
+                        _tableau.back()[currentArtificialVariable] = -1.0;
+                        _tableau[i][currentArtificialVariable++] = 1.0;
+                        _tableau[i][currentSurplusVariable++] = -1.0;
+                        break;
                 }
-                if (isFreeVariable)
+            }
+
+            MakeCanonical();
+        }
+
+        void FilterTableau(const vector<bool>& mask)
+        {
+            vector<size_t> basicVariables;
+            vector<vector<double>> tableau;
+            for (size_t i = 0; i < mask.size()-1; ++i)
+            {
+                if (mask[i])
                 {
-                    _freeVariables.push_back(currentPivot);
+                    basicVariables.push_back(_basicVariables[i]);
+                    tableau.push_back(move(_tableau[i]));
                 }
-                ++currentPivot;
             }
-            while (currentPivot < _a[0].size())
-            {
-                _freeVariables.push_back(currentPivot++);
-            }
+            tableau.push_back(move(_tableau.back()));
+            _basicVariables = move(basicVariables);
+            _tableau = move(tableau);
         }
 
-        vector<size_t> _pivots;
-        vector<size_t> _freeVariables;
+        vector<double> _objective;
 
-        vector<vector<double>> _a;
-        vector<double> _b;
+        vector<Constraint> _constraints;
 
-        vector<double> _x;
-        vector<vector<double>> _nullSpace;
-};
+        size_t _nProblemVariables;
+        size_t _nSlackVariables;
+        size_t _nSurplusVariables;
+        size_t _nArtificialVariables;
 
-class LPSolver
-{
-    public:
-
-        LPSolver(vector<vector<double>> a, vector<double> b, const vector<double>& lowerBounds, const vector<double>& upperBounds)
-            : _a(move(a))
-            , _b(move(b))
-            , _lowerBounds(lowerBounds)
-            , _upperBounds(upperBounds)
-            , _x(_a[0].size())
-            , _nVertices(0)
-            , _minObj(numeric_limits<double>::infinity())
-        {
-        }
-
-        bool Solve()
-        {
-            System system(_a, _b);
-            if (!system.Solve())
-            {
-                return false;
-            }
-
-            if (system.DegreesOfFreedom() == 0)
-            {
-                _x = system.GetSolution();
-                _minObj = accumulate(_x.begin(), _x.end(), 0.0);
-                return InRange(_x, _lowerBounds, _upperBounds);
-            }
-
-            return Solve(_x.size(), system.DegreesOfFreedom());
-        }
-
-        const vector<double>& GetSolution() const
-        {
-            return _x;
-        }
-
-        double Obj() const
-        {
-            return _minObj; //accumulate(_x.begin(), _x.end(), 0.0);
-        }
-
-    private:
-
-        bool Solve(size_t i, size_t dof)
-        {
-            if (dof == 0)
-            {
-                ++_nVertices;
-                System system(_a, _b);
-                bool okSolution = system.Solve() &&
-                    system.DegreesOfFreedom() == 0 &&
-                    InRange(system.GetSolution(), _lowerBounds, _upperBounds);
-                if (!okSolution)
-                {
-                    return false;
-                }
-                const auto& x = system.GetSolution();
-                double obj = accumulate(x.begin(), x.end(), 0.0);
-                if (obj < _minObj)
-                {
-                    _x = x;
-                    _minObj = obj;
-                }
-                return true;
-            }
-
-            bool solutionFound = false;
-            if (i > dof)
-            {
-                solutionFound = Solve(i-1, dof);
-            }
-            vector<double> constraint(_a[0].size());
-            constraint[i-1] = 1.0;
-
-            _a.push_back(move(constraint));
-            _b.push_back(_lowerBounds[i-1]);
-            solutionFound = Solve(i-1, dof-1) || solutionFound;
-
-            if (_upperBounds[i-1] < numeric_limits<double>::infinity())
-            {
-                _b.back() = _upperBounds[i-1];
-                solutionFound = Solve(i-1, dof-1) || solutionFound;
-            }
-
-            _a.pop_back();
-            _b.pop_back();
-
-            return solutionFound;
-        }
-
-        vector<vector<double>> _a;
-        vector<double> _b;
-        const vector<double>& _lowerBounds;
-        const vector<double>& _upperBounds;
-        vector<double> _x;
-        size_t _nVertices;
-        double _minObj;
-
+        vector<size_t> _basicVariables;
+        vector<vector<double>> _tableau;
 };
 
 class IPSolver
@@ -346,24 +487,20 @@ class IPSolver
     public:
 
         explicit IPSolver(const Row& row)
-            : _a(row.joltages.size(), vector<double>(row.buttons.size()))
-            , _b(row.joltages.size())
-            , _x(row.buttons.size())
-            , _upperBound(numeric_limits<double>::infinity())
-            , _xLowBounds(row.buttons.size(), 0)
-            , _xHighBounds(row.buttons.size(), numeric_limits<double>::infinity())
+            : _upperBound(kInf)
         {
+            _lpSolver.SetObjective(vector<double>(row.buttons.size(), 1.0));
             for (size_t i = 0; i < row.joltages.size(); ++i)
             {
+                Constraint constraint;
+                constraint.type = Constraint::Equality;
+                constraint.left.resize(row.buttons.size());
                 for (size_t j = 0; j < row.buttons.size(); ++j)
                 {
-                    UInt button = row.buttons[j];
-                    if ((button>>i)&1)
-                    {
-                        _a[i][j] = 1.0;
-                    }
+                    constraint.left[j] = (row.buttons[j]>>i)&1? 1.0 : 0.0;
                 }
-                _b[i] = row.joltages[i];
+                constraint.right = row.joltages[i];
+                _lpSolver.AddConstraint(move(constraint));
             }
         }
 
@@ -377,7 +514,7 @@ class IPSolver
             return _x;
         }
 
-        unsigned Obj() const
+        unsigned Objective() const
         {
             return static_cast<unsigned>(round(_upperBound));
         }
@@ -386,65 +523,52 @@ class IPSolver
 
         bool SolveR()
         {
-            LPSolver lpSolver(_a, _b, _xLowBounds, _xHighBounds);
-            if (!lpSolver.Solve() || lpSolver.Obj() >= _upperBound)
+            if (_lpSolver.Solve() != LPResult::Ok || _lpSolver.Objective() >= _upperBound)
             {
                 return false;
             }
-            const auto& x = lpSolver.GetSolution();
-            double obj = accumulate(x.begin(), x.end(), 0.0);
+            auto x = _lpSolver.GetSolution();
             auto it = find_if_not(x.begin(), x.end(), IsInteger);
             if (it == x.end())
             {
-                if (obj < _upperBound)
+                if (_lpSolver.Objective() < _upperBound)
                 {
-                    _upperBound = obj;
+                    _upperBound = _lpSolver.Objective();
                     _x = x;
+                    return true;
                 }
-                return true;
+                return false;
             }
 
             bool found = false;
-            size_t i = it - x.begin();
+            size_t branchVar = it - x.begin();
 
-            double prevLowBound = _xLowBounds[i];
-            _xLowBounds[i] = ceil(x[i]);
+            _lpSolver.AddLowerBoundConstraint(branchVar, ceil(x[branchVar]));
             found = SolveR() || found;
-            _xLowBounds[i] = prevLowBound;
+            _lpSolver.PopConstraint();
 
-            double prevUpperBound = _xHighBounds[i];
-            _xHighBounds[i] = floor(x[i]);
+            _lpSolver.AddUpperBoundConstraint(branchVar, floor(x[branchVar]));
             found = SolveR() || found;
-            _xHighBounds[i] = prevUpperBound;
+            _lpSolver.PopConstraint();
 
             return found;
         }
 
-        vector<vector<double>> _a;
-        vector<double> _b;
+        LPSolver _lpSolver;
         vector<double> _x;
         double _upperBound;
-        vector<double> _xLowBounds;
-        vector<double> _xHighBounds;
 };
 
 int main()
 {
     auto input = Input();
-    unsigned answer = 0;    
+    unsigned answer = 0;
     for (const auto& row : input)
     {
         IPSolver solver(row);
         assert(solver.Solve());
-        answer += solver.Obj();
-        //const auto& x = solver.GetSolution();
-        //cout << '[';
-        //for (size_t i = 0; i < x.size(); ++i)
-        //{
-            //if (i > 0) cout << ',';
-            //cout << x[i];
-        //}
-        //cout << ']' << endl;
+        answer += solver.Objective();
+        //cout << solver.GetSolution() << ' ' << solver.Objective() << endl;
     }
     cout << answer << endl;
 }
