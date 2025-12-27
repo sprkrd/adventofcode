@@ -51,14 +51,16 @@ def print_error_and_exit(error_msg):
 
 def prepare_day(year, day, session_cookie, force_download=False, samples="first"):
     print(f"Preparing {year}/{day:02}...")
-    dst_path = os.path.join(ROOT_PATH, str(year), f"{day:02}")
-    input_path = os.path.join(dst_path, "input")
+    year_path = os.path.join(ROOT_PATH, str(year))
+    os.makedirs(year_path, exist_ok=True)
+    day_path = os.path.join(year_path, f"{day:02}")
+    input_path = os.path.join(day_path, "input")
     cookies = {"session": session_cookie}
-    if os.path.isdir(dst_path):
+    if os.path.isdir(day_path):
         cprint("> Working directory already exists", "yellow")
     else:
         print("> Setting up working directory...", end="")
-        shutil.copytree(TEMPLATE_PATH, dst_path)
+        shutil.copytree(TEMPLATE_PATH, day_path)
         cprint(" Done", "green")
 
     day_url = f"{AOC_URL}/{year}/day/{day}"
@@ -90,7 +92,7 @@ def prepare_day(year, day, session_cookie, force_download=False, samples="first"
         code_snippets_parser = CodeSnippetsParser(all_samples=all_samples)
         code_snippets = code_snippets_parser.parse(response.text)
         for i, code_snippet in enumerate(code_snippets, 1):
-            snippet_filename = os.path.join(dst_path, f"sample{i}")
+            snippet_filename = os.path.join(day_path, f"sample{i}")
             print(f" {os.path.basename(snippet_filename)}", end="")
             with open(snippet_filename, "w") as f:
                 f.write(code_snippet)
