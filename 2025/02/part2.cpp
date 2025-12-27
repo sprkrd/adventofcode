@@ -83,6 +83,6 @@ int main()
         ranges.emplace_back(stoull(parts[0]), stoull(parts[1]));
     }
     sort(ranges.begin(), ranges.end());
-    cout << ranges.size() << endl;
+    //cout << ranges.size() << endl;
     cout << SumInvalidIds(ranges) << endl;
 }
