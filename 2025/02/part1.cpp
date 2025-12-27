@@ -77,7 +77,7 @@ int64_t SumInvalidIds(int64_t init, int64_t end)
     int64_t invalidId;
     while ((invalidId=Concatenate(firstHalf, firstHalf)) <= end)
     {
-        cout << invalidId << endl;
+        //cout << invalidId << endl;
         ans += invalidId;
         ++firstHalf;
     }
