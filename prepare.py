@@ -5,10 +5,10 @@ import os
 import requests
 import shutil
 import sys
-import time
 
 from argparse import ArgumentParser
 from html.parser import HTMLParser
+from time import sleep
 
 
 ROOT_PATH = os.path.dirname(__file__)
@@ -46,9 +46,9 @@ def print_error_and_exit(error_msg):
     sys.exit(1)
 
 
-def prepare_day(year, day, session_cookie, force_download=False, all_samples=False):
-    print(f"Preparing {year}/{day}...")
-    dst_path = os.path.join(ROOT_PATH, str(year), str(day))
+def prepare_day(year, day, session_cookie, force_download=False, samples="first"):
+    print(f"Preparing {year}/{day:02}...")
+    dst_path = os.path.join(ROOT_PATH, str(year), f"{day:02}")
     input_path = os.path.join(dst_path, "input")
     cookies = {"session": session_cookie}
     if os.path.isdir(dst_path):
@@ -73,11 +73,16 @@ def prepare_day(year, day, session_cookie, force_download=False, all_samples=Fal
         except Exception as e:
             print(f" Couldn't download input: {e}")
 
+    if samples == "none":
+        print("> Skipping the download of code blocks")
+        return
+
     try:
         print("> Parsing code blocks...", end="")
         response = requests.get(day_url, cookies=cookies)
         if not response.ok:
             raise RuntimeError(f"Status: {response.status_code}")
+        all_samples = samples == "all"
         code_snippets_parser = CodeSnippetsParser(all_samples=all_samples)
         code_snippets = code_snippets_parser.parse(response.text)
         for i, code_snippet in enumerate(code_snippets, 1):
@@ -101,7 +106,9 @@ def main():
             "-f", "--force-download", action="store_true",
             help="Download the input even if the input file already exists")
     argument_parser.add_argument(
-            "-a", "--all-samples", action="store_true",
+            "-s", "--samples",
+            choices=["none", "first", "all"],
+            default="first",
             help="Save all the code samples, not just the first one")
     argument_parser.add_argument("-l", "--last-day",
                                  type=int,
@@ -134,7 +141,7 @@ def main():
     for day in range(first_day, last_day+1):
         if day != first_day:
             sleep(0.5) # courtesy time between requests
-        prepare_day(args.year, day, session_cookie, args.force_download, args.all_samples)
+        prepare_day(args.year, day, session_cookie, args.force_download, args.samples)
 
 
 if __name__ == "__main__":
