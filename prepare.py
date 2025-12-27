@@ -93,7 +93,6 @@ def prepare_day(year, day, session_cookie, force_download=False, samples="first"
         print(". Done.")
     except Exception as e:
         print(f" Error parsing code snippets: {e}")
-        raise e
 
 
 def main():
