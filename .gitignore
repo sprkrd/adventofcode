@@ -3,3 +3,4 @@
 *.swp
 *input
 *session-cookie.json
+.venv
