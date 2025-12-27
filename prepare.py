@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import requests
+
 import json
 import os
-import requests
 import shutil
 import sys
+
+from termcolor import cprint, colored
 
 from argparse import ArgumentParser
 from html.parser import HTMLParser
@@ -52,14 +55,15 @@ def prepare_day(year, day, session_cookie, force_download=False, samples="first"
     input_path = os.path.join(dst_path, "input")
     cookies = {"session": session_cookie}
     if os.path.isdir(dst_path):
-        print("> Working directory already exists")
+        cprint("> Working directory already exists", "yellow")
     else:
-        print("> Setting up working directory")
+        print("> Setting up working directory...", end="")
         shutil.copytree(TEMPLATE_PATH, dst_path)
+        cprint(" Done", "green")
 
     day_url = f"{AOC_URL}/{year}/day/{day}"
     if os.path.isfile(input_path) and not force_download:
-        print("> Input already downloaded. Nothing to do.")
+        cprint("> Input already downloaded. Nothing to do.", "yellow")
     else:
         print("> Downloading input...", end="")
         try:
@@ -69,12 +73,12 @@ def prepare_day(year, day, session_cookie, force_download=False, samples="first"
                 raise RuntimeError(f"Status: {response.status_code}")
             with open(input_path, "wb") as f:
                 f.write(response.content)
-            print(" Done.")
+            cprint(" Done.", "green")
         except Exception as e:
-            print(f" Couldn't download input: {e}")
+            cprint(f" Couldn't download input: {e}", "red")
 
     if samples == "none":
-        print("> Skipping the download of code blocks")
+        cprint("> Skipping the download of code blocks", "yellow")
         return
 
     try:
@@ -90,9 +94,9 @@ def prepare_day(year, day, session_cookie, force_download=False, samples="first"
             print(f" {os.path.basename(snippet_filename)}", end="")
             with open(snippet_filename, "w") as f:
                 f.write(code_snippet)
-        print(". Done.")
+        print(". " + colored(" Done", "green"))
     except Exception as e:
-        print(f" Error parsing code snippets: {e}")
+        cprint(f" Error parsing code snippets: {e}", "red")
 
 
 def main():
